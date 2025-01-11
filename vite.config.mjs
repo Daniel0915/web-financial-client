@@ -20,5 +20,14 @@ export default defineConfig({
         alias: {
             '@': fileURLToPath(new URL('./src', import.meta.url))
         }
+    },
+    server: {
+        proxy: {
+            '/api': {
+                target: 'http://localhost:8081', // 실제 API 서버 주소
+                changeOrigin: true, // Cross-Origin 허용
+                rewrite: (path) => path.replace(/^\/api/, ''), // '/api' 제거
+            }
+        }
     }
 });
