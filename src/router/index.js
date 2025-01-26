@@ -14,6 +14,16 @@ const router = createRouter({
                     component: () => import('@/views/Dashboard.vue')
                 },
                 {
+                    path: '/indexedDB',
+                    name: 'indexedDB',
+                    component: () => import('@/views/IndexedDB.vue')
+                },
+                {
+                    path: '/large-holding',
+                    name: 'largeHoldings',
+                    component: () => import('@/views/LargeHoldings.vue')
+                },
+                {
                     path: '/uikit/formlayout',
                     name: 'formlayout',
                     component: () => import('@/views/uikit/FormLayout.vue')

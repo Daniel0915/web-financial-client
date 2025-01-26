@@ -399,12 +399,6 @@ request.onsuccess = function (event) {
 
 
 
-
-
-// TODO : index db
-
-
-
 // EventSource 에서 받은 메시지를 저장할 상태
 // const messages = ref([]); // 실시간 메시지를 담는 배열
 //
