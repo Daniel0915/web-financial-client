@@ -1,4 +1,4 @@
-export const CustomerService = {
+export const LargeHoldingsDetailsService = {
     getData() {
         return [
             {
@@ -9027,6 +9027,15 @@ export const CustomerService = {
                 .join('&')
             : '';
 
-        return fetch('https://www.primefaces.org/data/customers?' + queryParams).then((res) => res.json());
+         return fetch('https://www.primefaces.org/data/customers?' + queryParams).then((res) => res.json());
+    },
+
+    getSearchData(params) {
+        const queryParams = params
+            ? Object.keys(params)
+                .map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
+                .join('&')
+            : '';
+        return fetch('/api/stock/search/large-holdings?' + queryParams).then((res) => res.json());
     }
 };
