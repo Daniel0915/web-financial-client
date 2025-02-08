@@ -1,6 +1,6 @@
 <script setup>
 import { LargeHoldingsDetailsService } from "@/service/LargeHoldingsDetailsService";
-import { onBeforeMount, ref, computed } from "vue";
+import { computed, onBeforeMount, ref } from "vue";
 
 
 const loading1 = ref(false);
@@ -8,16 +8,30 @@ const largeHoldingsDetailList = ref([]);
 const page = ref(0);
 const totalRecords = ref(0);
 const rows = ref(10);
+const tradeDateRange = ref(null);
 
-const selected = ref(null);
 const selectList = ref([
-    { name: "내부자 이름", code: "largeHoldingsName" },
-    { name: "매매 사유", code: "tradeReason" },
-    { name: "주식 종류", code: "stockType" },
+    { name: "검색어 선택", code: "" },
+    { name: "내부자 이름", code: "largeHoldingsNameContains" },
+    { name: "매매 사유", code: "tradeReasonContains" },
+    { name: "증권 종류", code: "stockTypeContains" },
 ]);
+const selected = ref(selectList.value[0]);
 const inputText = ref(null);
 
-const isButtonDisabled = computed(() => selected.value == null || inputText.value == null  || !selected.value || !inputText.value.trim());
+const isButtonEnabled = computed(() => {
+    // init selected value case
+    if (selected.value.code === '') {
+        return true;
+    }
+
+    // another selected value case
+    if (selected.value.code !== '' && inputText.value) {
+        return true;
+    }
+
+    return false;
+});
 
 onBeforeMount(() => {
     let params = {
@@ -30,19 +44,6 @@ onBeforeMount(() => {
     searchData(params);
 });
 
-function searchBtn(selected, inputText) {
-    page.value = 0; // page init 초기화
-    const key = selected.code;
-    let params = {
-        orderColumn: "tradeDt",
-        isDescending: true,
-        [key]: inputText,
-        page: page.value,
-        size: rows.value
-    };
-    this.searchData(params);
-}
-
 
 function searchData(params) {
     LargeHoldingsDetailsService.getSearchData(params).then((response) => {
@@ -54,21 +55,43 @@ function searchData(params) {
             largeHoldingsDetail.url = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${largeHoldingsDetail.rceptNo}`;
         });
     });
-
 }
 
+function searchBtn(selected, inputText, tradeDateRange) {
+    const param = getSearchParam(0, selected, inputText, tradeDateRange);
+    this.searchData(param);
+}
 
-function onPageChange(event) {
-    page.value = event.page;
+function onPageChange(event, selected, inputText, tradeDateRange) {
+    const param = getSearchParam(event.page, selected, inputText, tradeDateRange);
+    searchData(param);
+}
 
-    let params = {
-        orderColumn : "tradeDt",
+function getSearchParam(inputPage, selected, inputText, tradeDateRange) {
+    page.value = inputPage;
+    const tradeDtGoe = !tradeDateRange ? null : formatDate(tradeDateRange[0]);
+    const tradeDtLoe = !tradeDateRange ? null : formatDate(tradeDateRange[1]);
+    const key = selected.code;
+
+    return {
+        orderColumn: "tradeDt",
         isDescending: true,
-        page : page.value,
-        size : rows.value,
+        page: page.value,
+        size: rows.value,
+        ...(key && { [key]: inputText }),
+        ...(tradeDtGoe && { ['tradeDtGoe']: tradeDtGoe }),
+        ...(tradeDtLoe && { ['tradeDtLoe']: tradeDtLoe }),
     };
-    searchData(params);
 }
+
+function formatDate(date) {
+    if (!date) return null;
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+};
 
 
 </script>
@@ -87,10 +110,21 @@ function onPageChange(event) {
             <template #header>
                 <div class="flex justify-between">
                     <InputGroup>
+                        <DatePicker v-model="tradeDateRange" selectionMode="range"
+                                    :manualInput="false"
+                                    placeholder="거래 날짜 선택">
+                            <template #footer>
+                                <div class="flex flex-wrap gap-2">
+                                    <Button @click="tradeDateRange = null"  icon="pi pi-times" severity="danger" text raised rounded />
+                                </div>
+                            </template>
+                        </DatePicker>
+
                         <Select v-model="selected" :options="selectList" optionLabel="name" placeholder="검색어 선택" />
-                        <InputText :placeholder="!selected ? '검색어 선택해주세요.' : '검색어 입력해주세요.'" v-model="inputText" :disabled="!selected"/>
-                        <Button label="검색" @click="searchBtn(selected, inputText)" :disabled="isButtonDisabled" />
+                        <InputText :placeholder="selected.code === '' ? '검색어 선택해주세요.' : '검색어 입력해주세요.'" v-model="inputText" :disabled="selected.code === ''"/>
+                        <Button label="검색" @click="searchBtn(selected, inputText, tradeDateRange)" :disabled="!isButtonEnabled" />
                     </InputGroup>
+
                 </div>
             </template>
 
@@ -109,7 +143,7 @@ function onPageChange(event) {
             :rows="rows"
             :totalRecords="totalRecords"
             :first="page * rows"
-            @page="onPageChange"
+            @page="onPageChange($event, selected, inputText, tradeDateRange)"
         />
     </div>
 </template>

@@ -24,6 +24,11 @@ const router = createRouter({
                     component: () => import('@/views/LargeHoldings.vue')
                 },
                 {
+                    path: '/web-gpu',
+                    name: 'webGPU',
+                    component: () => import('@/views/WebGPU.vue')
+                },
+                {
                     path: '/uikit/formlayout',
                     name: 'formlayout',
                     component: () => import('@/views/uikit/FormLayout.vue')
