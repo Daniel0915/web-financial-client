@@ -21,10 +21,21 @@ const selectList = ref([
 const selected = ref(selectList.value[0]);
 const inputText = ref(null);
 
+const selectRangeList = ref([
+    { name: "범위 선택(거래량, 평단가, 보유주식)", code: "" },
+    { name: "거래량", code: "changeStockAmount" },
+    { name: "평단가", code: "unitStockPrice" },
+    { name: "보유주식", code: "afterStockAmount" },
+]);
+
+const selectedRange = ref(selectRangeList.value[0]);
+const minAmount = ref(null);
+const maxAmount = ref(null);
+
 const onSort = (event) => {
     sortField.value = event.sortField;
     sortOrder.value = event.sortOrder;
-    let param = getSearchParam(0, selected.value, inputText.value, tradeDateRange.value, sortField.value, sortOrder.value);
+    const param = getSearchParam(0, selected.value, inputText.value, tradeDateRange.value, sortField.value, sortOrder.value, selectedRange.value, minAmount.value, maxAmount.value);
     searchData(param);
 };
 
@@ -74,31 +85,38 @@ function formatAccountingNumber(number) {
     return number < 0 ? `(${absNumber})` : absNumber;
 }
 
-function searchBtn(selected, inputText, tradeDateRange, sortField, sortOrder) {
-    const param = getSearchParam(0, selected, inputText, tradeDateRange, sortField, sortOrder);
+function searchBtn(selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount) {
+    const param = getSearchParam(0, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount);
     searchData(param);
 }
 
-function onPageChange(event, selected, inputText, tradeDateRange, sortField, sortOrder) {
-    const param = getSearchParam(event.page, selected, inputText, tradeDateRange, sortField, sortOrder);
+function onPageChange(event, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount) {
+    const param = getSearchParam(event.page, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount);
     searchData(param);
 }
 
-function getSearchParam(inputPage, selected, inputText, tradeDateRange, orderColumn, sortOrder) {
+function getSearchParam(inputPage, selected, inputText, tradeDateRange, orderColumn, sortOrder, selectedRange, minAmount, maxAmount) {
     page.value = inputPage;
     const tradeDtGoe = !tradeDateRange ? null : formatDate(tradeDateRange[0]);
     const tradeDtLoe = !tradeDateRange ? null : formatDate(tradeDateRange[1]);
     const key = selected.code;
 
-    return {
+    let param = {
         orderColumn: orderColumn ?? "tradeDt",
         isDescending: sortOrder === null || sortOrder === undefined || sortOrder === '' ? true : (sortOrder === -1),
         page: page.value,
         size: rows.value,
-        ...(key && { [key]: inputText }),
+        ...(key && inputText && { [key]: inputText }),
         ...(tradeDtGoe && { ['tradeDtGoe']: tradeDtGoe }),
         ...(tradeDtLoe && { ['tradeDtLoe']: tradeDtLoe }),
     };
+
+    if (selectedRange && selectedRange.code) {
+        param[`${selectedRange.code}Goe`] = minAmount ?? '';
+        param[`${selectedRange.code}Loe`] = maxAmount ?? '';
+    }
+
+    return param;
 }
 
 function formatDate(date) {
@@ -131,23 +149,48 @@ function windowOpen(url) {
             showGridlines
         >
             <template #header>
-                <div class="flex justify-between">
-                    <InputGroup>
-                        <DatePicker v-model="tradeDateRange" selectionMode="range"
-                                    :manualInput="false"
-                                    placeholder="거래 날짜 선택">
-                            <template #footer>
-                                <div class="flex flex-wrap gap-2">
-                                    <Button @click="tradeDateRange = null"  icon="pi pi-times" severity="danger" text raised rounded />
-                                </div>
+                <div class="card flex flex-wrap gap-4">
+                    <div class="flex-auto">
+                        <InputGroup>
+                            <DatePicker v-model="tradeDateRange" selectionMode="range"
+                                        :manualInput="false"
+                                        placeholder="거래 날짜 선택"
+                                        showIcon fluid iconDisplay="input"
+                                        inputId="tradeDateRange"
+                            >
+                                <template #footer>
+                                    <div class="flex flex-wrap gap-2">
+                                        <Button @click="tradeDateRange = null" icon="pi pi-times" severity="danger" text
+                                                raised rounded />
+                                    </div>
+                                </template>
+                            </DatePicker>
+                        </InputGroup>
+                    </div>
+
+                    <div class="flex-auto">
+                        <InputGroup>
+                            <Select v-model="selectedRange" :options="selectRangeList" optionLabel="name"/>
+                            <template v-if="selectedRange.name === '평단가'">
+                                <InputNumber v-model="minAmount" placeholder="최소 금액" inputId="currency-kr" mode="currency" currency="KRW" locale="ko-KR" fluid :disabled="selectedRange.code === ''"/>
+                                <InputGroupAddon>~</InputGroupAddon>
+                                <InputNumber v-model="maxAmount" placeholder="최대 금액" inputId="currency-kr" mode="currency" currency="KRW" locale="ko-KR" fluid :disabled="selectedRange.code === ''"/>
                             </template>
-                        </DatePicker>
+                            <template v-else>
+                                <InputNumber v-model="minAmount" placeholder="최소 주식" fluid :disabled="selectedRange.code === ''"/>
+                                <InputGroupAddon>~</InputGroupAddon>
+                                <InputNumber v-model="maxAmount" placeholder="최대 주식" fluid :disabled="selectedRange.code === ''"/>
+                            </template>
+                        </InputGroup>
+                    </div>
 
-                        <Select v-model="selected" :options="selectList" optionLabel="name" placeholder="검색어 선택" />
-                        <InputText :placeholder="selected.code === '' ? '검색어 선택해주세요.' : '검색어 입력해주세요.'" v-model="inputText" :disabled="selected.code === ''"/>
-                        <Button label="검색" @click="searchBtn(selected, inputText, tradeDateRange, sortField, sortOrder)" :disabled="!isButtonEnabled" />
-                    </InputGroup>
-
+                    <div class="flex-auto">
+                        <InputGroup>
+                            <Select v-model="selected" :options="selectList" optionLabel="name" placeholder="검색어 선택" />
+                            <InputText :placeholder="selected.code === '' ? '검색어 선택해주세요.' : '검색어 입력해주세요.'" v-model="inputText" :disabled="selected.code === ''"/>
+                            <Button label="검색" @click="searchBtn(selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount)" :disabled="!isButtonEnabled" />
+                        </InputGroup>
+                    </div>
                 </div>
             </template>
 
@@ -187,7 +230,7 @@ function windowOpen(url) {
             :rows="rows"
             :totalRecords="totalRecords"
             :first="page * rows"
-            @page="onPageChange($event, selected, inputText, tradeDateRange, sortField, sortOrder)"
+            @page="onPageChange($event, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount)"
         />
     </div>
 </template>
