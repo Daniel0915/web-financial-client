@@ -29,5 +29,6 @@ export default defineConfig({
                 rewrite: (path) => path.replace(/^\/api/, ''), // '/api' 제거
             }
         }
-    }
+    },
+    base: '/web-financial-client/dist/', // GitHub Pages 용 base 경로 설정
 });
