@@ -132,7 +132,6 @@ function windowOpen(url) {
     window.open(url, '_blank');
 }
 
-
 </script>
 
 <template>

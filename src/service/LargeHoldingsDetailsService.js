@@ -9036,6 +9036,6 @@ export const LargeHoldingsDetailsService = {
                 .map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
                 .join('&')
             : '';
-        return fetch('/api/stock/search/large-holdings?' + queryParams).then((res) => res.json());
+        return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/search/large-holdings?${queryParams}`).then((res) => res.json());
     }
 };
