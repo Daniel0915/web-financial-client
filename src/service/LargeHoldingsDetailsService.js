@@ -9037,5 +9037,14 @@ export const LargeHoldingsDetailsService = {
                 .join('&')
             : '';
         return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/search/large-holdings?${queryParams}`).then((res) => res.json());
+    },
+
+    getLargeHoldingsStockRatio(params) {
+        const queryParams = params
+            ? Object.keys(params)
+                .map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
+                .join('&')
+            : '';
+        return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/large-holdings-stock-ratio?${queryParams}`).then((res) => res.json());
     }
 };

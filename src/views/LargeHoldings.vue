@@ -1,7 +1,6 @@
 <script setup>
 import { LargeHoldingsDetailsService } from "@/service/LargeHoldingsDetailsService";
-import { computed, onBeforeMount, ref } from "vue";
-
+import { computed, ref, onMounted } from "vue";
 
 const loading1 = ref(false);
 const largeHoldingsDetailList = ref([]);
@@ -11,6 +10,8 @@ const rows = ref(10);
 const tradeDateRange = ref(null);
 const sortField = ref('tradeDt');
 const sortOrder = ref(true); // 내림차순 default
+const chartData = ref();
+const chartOptions = ref(null);
 
 const selectList = ref([
     { name: "검색어 선택", code: "" },
@@ -53,18 +54,6 @@ const isButtonEnabled = computed(() => {
     return false;
 });
 
-onBeforeMount(() => {
-    let params = {
-        orderColumn : "tradeDt",
-        isDescending: true,
-        page : page.value,
-        size : rows.value,
-    };
-
-    searchData(params);
-});
-
-
 function searchData(params) {
     LargeHoldingsDetailsService.getSearchData(params).then((response) => {
         largeHoldingsDetailList.value = response.data.content;
@@ -77,6 +66,14 @@ function searchData(params) {
         });
     });
 }
+function largeHoldingsStockRatio(params) {
+    LargeHoldingsDetailsService.getLargeHoldingsStockRatio(params).then((response) => {
+        chartData.value = setChartData(response.data);
+        chartOptions.value = setChartOptions();
+
+    });
+}
+
 
 function formatAccountingNumber(number) {
     const absNumber = Math.abs(number).toLocaleString('en-US'); // 천 단위 콤마 추가
@@ -132,9 +129,86 @@ function windowOpen(url) {
     window.open(url, '_blank');
 }
 
+// ############### 대주주 주식 보유 비중 [start] ###############
+onMounted(async () => {
+    let params = {
+        orderColumn : "tradeDt",
+        isDescending: true,
+        page : page.value,
+        size : rows.value,
+    };
+    await Promise.all([
+        largeHoldingsStockRatio({ corpCodeEq: 126380 }),
+        searchData(params),
+    ]);
+});
+
+const setChartData = (largeHoldingsStockRatioList) => {
+    let chartData = {
+        labels : ['기타'],
+        data : [100],
+        backgroundColor: [],
+        hoverBackgroundColor: [],
+    };
+
+    const colors = ['emerald', 'green', 'lime', 'orange', 'amber', 'yellow', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose'];
+    const colorsLength = colors.length;
+    const documentStyle = getComputedStyle(document.body);
+
+    if (largeHoldingsStockRatioList?.length) {
+        let sumStkrt = 0;
+
+        for (let index in largeHoldingsStockRatioList) {
+            chartData.labels.push(largeHoldingsStockRatioList[index].largeHoldingsName);
+            chartData.data.push(largeHoldingsStockRatioList[index].stkrt);
+            sumStkrt += largeHoldingsStockRatioList[index].stkrt;
+        }
+        chartData.data[0] -= sumStkrt;
+
+        for (let index in chartData.labels) {
+            const colorIndex = Number(index) % ((colorsLength - 1));
+            chartData.backgroundColor.push(documentStyle.getPropertyValue(`--p-${colors[colorIndex]}-500`));
+            chartData.hoverBackgroundColor.push(documentStyle.getPropertyValue(`--p-${colors[colorIndex]}-400`));
+        }
+    }
+
+    return {
+        labels: chartData.labels,
+        datasets: [
+            {
+                data: chartData.data,
+                backgroundColor: chartData.backgroundColor,
+                hoverBackgroundColor: chartData.hoverBackgroundColor
+            }
+        ]
+    };
+};
+
+const setChartOptions = () => {
+    const documentStyle = getComputedStyle(document.documentElement);
+    const textColor = documentStyle.getPropertyValue('--p-text-color');
+
+    return {
+        plugins: {
+            legend: {
+                labels: {
+                    cutout: '60%',
+                    color: textColor
+                }
+            }
+        }
+    };
+};
+// ############### 대주주 실질 Top 5 [end] ###############
+
 </script>
 
 <template>
+
+    <div class="card flex justify-center">
+        <Chart type="doughnut" :data="chartData" :options="chartOptions" class="w-full md:w-[30rem]" />
+    </div>
+
     <div class="card">
         <div class="font-semibold text-xl mb-4">대주주 매매 상세</div>
         <DataTable
@@ -232,6 +306,8 @@ function windowOpen(url) {
             @page="onPageChange($event, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount)"
         />
     </div>
+
+
 </template>
 
 <style scoped lang="scss">
