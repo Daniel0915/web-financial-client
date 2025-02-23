@@ -10,8 +10,11 @@ const rows = ref(10);
 const tradeDateRange = ref(null);
 const sortField = ref('tradeDt');
 const sortOrder = ref(true); // 내림차순 default
+
 const chartData = ref();
 const chartOptions = ref(null);
+const chartDataByLargeHoldingsMonthlyTradeCnt = ref();
+const chartOptionsByLargeHoldingsMonthlyTradeCnt = ref();
 
 const selectList = ref([
     { name: "검색어 선택", code: "" },
@@ -32,6 +35,22 @@ const selectRangeList = ref([
 const selectedRange = ref(selectRangeList.value[0]);
 const minAmount = ref(null);
 const maxAmount = ref(null);
+
+onMounted(async () => {
+    let params = {
+        orderColumn : "tradeDt",
+        isDescending: true,
+        page : page.value,
+        size : rows.value,
+    };
+    await Promise.all([
+        getLargeHoldingsStockRatio({ corpCode : 126380 } ),
+        getLargeHoldingsMonthlyTradeCnt({ corpCode : 126380} ),
+        searchData(params),
+
+    ]);
+
+});
 
 const onSort = (event) => {
     sortField.value = event.sortField;
@@ -66,13 +85,22 @@ function searchData(params) {
         });
     });
 }
-function largeHoldingsStockRatio(params) {
+function getLargeHoldingsStockRatio(params) {
     LargeHoldingsDetailsService.getLargeHoldingsStockRatio(params).then((response) => {
         chartData.value = setChartData(response.data);
         chartOptions.value = setChartOptions();
-
     });
 }
+
+function getLargeHoldingsMonthlyTradeCnt(params) {
+    LargeHoldingsDetailsService.getLargeHoldingsMonthlyTradeCnt(params).then((response) => {
+        chartDataByLargeHoldingsMonthlyTradeCnt.value = setChartDataByLargeHoldingsMonthlyTradeCnt(response.data);
+        chartOptionsByLargeHoldingsMonthlyTradeCnt.value = setChartOptionsByLargeHoldingsMonthlyTradeCnt();
+    });
+
+}
+
+
 
 
 function formatAccountingNumber(number) {
@@ -130,19 +158,6 @@ function windowOpen(url) {
 }
 
 // ############### 대주주 주식 보유 비중 [start] ###############
-onMounted(async () => {
-    let params = {
-        orderColumn : "tradeDt",
-        isDescending: true,
-        page : page.value,
-        size : rows.value,
-    };
-    await Promise.all([
-        largeHoldingsStockRatio({ corpCodeEq: 126380 }),
-        searchData(params),
-    ]);
-});
-
 const setChartData = (largeHoldingsStockRatioList) => {
     let chartData = {
         labels : ['기타'],
@@ -201,12 +216,121 @@ const setChartOptions = () => {
 };
 // ############### 대주주 실질 Top 5 [end] ###############
 
+// ############### 대주주 매매 월별 [start] ###############
+const setChartDataByLargeHoldingsMonthlyTradeCnt = (largeHoldingsMonthlyTradeCntList) =>  {
+    let chartDataMap = new Map();
+    for (const { monthlyCountDTOList, sellOrBuyType } of largeHoldingsMonthlyTradeCntList) {
+        const sign = sellOrBuyType === "sell" ? -1 : 1;
+        for (const { month, count } of monthlyCountDTOList) {
+            if (!chartDataMap.has(month)) {
+                chartDataMap.set( month, {[sellOrBuyType] : sign * Number(count)} );
+            } else {
+                chartDataMap.get(month)[sellOrBuyType] = sign * Number(count);
+            }
+        }
+    }
+
+    let chartData = {
+        labels : [],
+        sellData : [],
+        buyData : [],
+    };
+
+    for (let key of chartDataMap.keys()) {
+        const year = key.slice(0, 4);
+        const month = key.slice(4, 6);
+
+        chartData.labels.push(`${year.slice(2)}년 ${Number(month)}월`);
+        let sellBuyObj = chartDataMap.get(key);
+
+        let sellCount = sellBuyObj?.sell ?? 0;
+        chartData.sellData.push(sellCount);
+
+        let buyCount = sellBuyObj?.buy ?? 0;
+        chartData.buyData.push(buyCount);
+    }
+
+    const documentStyle = getComputedStyle(document.documentElement);
+
+    return {
+        labels: chartData.labels,
+        datasets: [
+            {
+                type: 'bar',
+                label: '매수 건수',
+                backgroundColor: documentStyle.getPropertyValue('--p-red-500'),
+                data: chartData.buyData
+            },
+            {
+                type: 'bar',
+                label: '매도 건수',
+                backgroundColor: documentStyle.getPropertyValue('--p-blue-500'),
+                data: chartData.sellData
+            },
+        ]
+    };
+};
+const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
+    const documentStyle = getComputedStyle(document.documentElement);
+    const textColor = documentStyle.getPropertyValue('--p-text-color');
+    const textColorSecondary = documentStyle.getPropertyValue('--p-text-muted-color');
+    const surfaceBorder = documentStyle.getPropertyValue('--p-content-border-color');
+
+    return {
+        maintainAspectRatio: false,
+        aspectRatio: 0.8,
+        plugins: {
+            tooltips: {
+                mode: 'index',
+                intersect: false
+            },
+            legend: {
+                labels: {
+                    color: textColor
+                }
+            }
+        },
+        scales: {
+            x: {
+                stacked: true,
+                ticks: {
+                    color: textColorSecondary
+                },
+                grid: {
+                    color: surfaceBorder
+                }
+            },
+            y: {
+                title: {
+                    display: true,
+                    text: "거래건수"
+                },
+                stacked: true,
+                ticks: {
+                    color: textColorSecondary
+                },
+                grid: {
+                    color: surfaceBorder
+                }
+            }
+        }
+    };
+}
+
+
+
+// ############### 대주주 매매 월별 [end] ###############
+
 </script>
 
 <template>
 
     <div class="card flex justify-center">
         <Chart type="doughnut" :data="chartData" :options="chartOptions" class="w-full md:w-[30rem]" />
+    </div>
+
+    <div class="card flex justify-center">
+        <Chart type="bar" :data="chartDataByLargeHoldingsMonthlyTradeCnt" :options="chartOptionsByLargeHoldingsMonthlyTradeCnt" class="h-[30rem]" />
     </div>
 
     <div class="card">
