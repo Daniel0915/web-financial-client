@@ -16,6 +16,14 @@ const chartOptions = ref(null);
 const chartDataByLargeHoldingsMonthlyTradeCnt = ref();
 const chartOptionsByLargeHoldingsMonthlyTradeCnt = ref();
 
+const largeHoldingsStockRatioTop5 = ref([]);
+
+const chartDataByLargeHoldingsTradeHistory = ref();
+const chartOptionsByLargeHoldingsTradeHistory = ref();
+
+const corpCode = ref(126380);
+const selectedLargeHoldingsStockRatioTop5 = ref();
+
 const selectList = ref([
     { name: "검색어 선택", code: "" },
     { name: "내부자 이름", code: "largeHoldingsNameContains" },
@@ -44,12 +52,11 @@ onMounted(async () => {
         size : rows.value,
     };
     await Promise.all([
-        getLargeHoldingsStockRatio({ corpCode : 126380 } ),
-        getLargeHoldingsMonthlyTradeCnt({ corpCode : 126380} ),
+        getLargeHoldingsStockRatio({ corpCode : corpCode.value } ),
+        getLargeHoldingsMonthlyTradeCnt({ corpCode : corpCode.value } ),
         searchData(params),
-
+        getLargeHoldingsStockRatioTop5( { corpCode : corpCode.value } ),
     ]);
-
 });
 
 const onSort = (event) => {
@@ -97,10 +104,97 @@ function getLargeHoldingsMonthlyTradeCnt(params) {
         chartDataByLargeHoldingsMonthlyTradeCnt.value = setChartDataByLargeHoldingsMonthlyTradeCnt(response.data);
         chartOptionsByLargeHoldingsMonthlyTradeCnt.value = setChartOptionsByLargeHoldingsMonthlyTradeCnt();
     });
-
 }
 
+function getLargeHoldingsStockRatioTop5(params) {
+    LargeHoldingsDetailsService.getLargeHoldingsStockRatioTop5(params).then((response) => {
+        largeHoldingsStockRatioTop5.value = response.data;
 
+        if (largeHoldingsStockRatioTop5.value?.length) {
+            const params = {
+                corpCode: corpCode.value,
+                largeHoldingsName: largeHoldingsStockRatioTop5.value[0].largeHoldingsName
+            };
+            getLargeHoldingsTradeHistory(params);
+        }
+    });
+}
+
+function getLargeHoldingsTradeHistory(params) {
+    LargeHoldingsDetailsService.getLargeHoldingsTradeHistory(params).then((response) => {
+        chartDataByLargeHoldingsTradeHistory.value = setChartDataByLargeHoldingsTradeHistory(response.data, params.largeHoldingsName);
+        chartOptionsByLargeHoldingsTradeHistory.value = setChartOptionsByLargeHoldingsTradeHistory();
+    });
+}
+
+const setChartDataByLargeHoldingsTradeHistory = (largeHoldingsTradeHistoryList, largeHoldingsName) => {
+    let chatData = {
+        labels : [],
+        data : [],
+    };
+
+    for (let largeHoldingsTradeHistory of largeHoldingsTradeHistoryList) {
+        chatData.labels.push(formatDateStr(largeHoldingsTradeHistory.tradeDt));
+        chatData.data.push(largeHoldingsTradeHistory.afterStockAmount);
+    }
+
+    const documentStyle = getComputedStyle(document.documentElement);
+
+    return {
+        labels: chatData.labels,
+        datasets: [
+            {
+                label: largeHoldingsName,
+                fill: false,
+                borderColor: documentStyle.getPropertyValue('--p-cyan-500'),
+                yAxisID: 'y',
+                tension: 0.4,
+                data: chatData.data
+            },
+        ]
+    };
+}
+
+const setChartOptionsByLargeHoldingsTradeHistory = () => {
+    const documentStyle = getComputedStyle(document.documentElement);
+    const textColor = documentStyle.getPropertyValue("--p-text-color");
+    const textColorSecondary = documentStyle.getPropertyValue("--p-text-muted-color");
+    const surfaceBorder = documentStyle.getPropertyValue("--p-content-border-color");
+
+    return {
+        stacked: false,
+        maintainAspectRatio: false,
+        aspectRatio: 0.6,
+        plugins: {
+            legend: {
+                labels: {
+                    color: textColor
+                }
+            }
+        },
+        scales: {
+            x: {
+                ticks: {
+                    color: textColorSecondary
+                },
+                grid: {
+                    color: surfaceBorder
+                }
+            },
+            y: {
+                type: "linear",
+                display: true,
+                position: "left",
+                ticks: {
+                    color: textColorSecondary
+                },
+                grid: {
+                    color: surfaceBorder
+                }
+            },
+        }
+    };
+}
 
 
 function formatAccountingNumber(number) {
@@ -151,6 +245,16 @@ function formatDate(date) {
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}${month}${day}`;
+}
+
+function formatDateStr(dateString) {
+    if (dateString.length !== 8) return 'Invalid date';
+
+    const year = dateString.substring(0, 4);
+    const month = dateString.substring(4, 6);
+    const day = dateString.substring(6, 8);
+
+    return `${year}.${month}.${day}`;
 }
 
 function windowOpen(url) {
@@ -324,6 +428,20 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
 </script>
 
 <template>
+    <div class="card">
+        <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5" dataKey="seq" @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )" selectionMode="single"  tableStyle="min-width: 50rem">
+            <Column field="largeHoldingsName" header="내부자 이름"></Column>
+            <Column field="stkrt" header="보유 비율">
+                <template #body="slotProps">
+                    {{ slotProps.data.stkrt }}%
+                </template>
+            </Column>
+        </DataTable>
+    </div>
+
+    <div class="card">
+        <Chart type="line" :data="chartDataByLargeHoldingsTradeHistory" :options="chartOptionsByLargeHoldingsTradeHistory" class="h-[30rem]" />
+    </div>
 
     <div class="card flex justify-center">
         <Chart type="doughnut" :data="chartData" :options="chartOptions" class="w-full md:w-[30rem]" />
