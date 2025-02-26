@@ -1,6 +1,7 @@
 <script setup>
 import { LargeHoldingsDetailsService } from "@/service/LargeHoldingsDetailsService";
 import { computed, ref, onMounted } from "vue";
+import { CorpInfoService } from "@/service/CorpInfoService";
 
 const loading1 = ref(false);
 const largeHoldingsDetailList = ref([]);
@@ -44,6 +45,25 @@ const selectedRange = ref(selectRangeList.value[0]);
 const minAmount = ref(null);
 const maxAmount = ref(null);
 
+
+const corpInfoList = ref([]);
+const selectedItem = ref();
+const filteredItems = ref();
+const searchItems = (event) => {
+    let query = event.query;
+    let _filteredItems = [];
+
+    for (let i = 0; i < corpInfoList.value.length; i++) {
+        let item = corpInfoList.value[i];
+
+        if (item.label.toLowerCase().indexOf(query.toLowerCase()) === 0) {
+            _filteredItems.push(item);
+        }
+    }
+
+    filteredItems.value = _filteredItems;
+};
+
 onMounted(async () => {
     let params = {
         orderColumn : "tradeDt",
@@ -56,6 +76,7 @@ onMounted(async () => {
         getLargeHoldingsMonthlyTradeCnt({ corpCode : corpCode.value } ),
         searchData(params),
         getLargeHoldingsStockRatioTop5( { corpCode : corpCode.value } ),
+        getAllCorpInfoList(),
     ]);
 });
 
@@ -97,6 +118,62 @@ function getLargeHoldingsStockRatio(params) {
         chartData.value = setChartData(response.data);
         chartOptions.value = setChartOptions();
     });
+}
+
+function getAllCorpInfoList() {
+    const dbName = "stock";
+    const version = 1;
+    const objectStoreNm = "corpInfo";
+    // 1. indexedDB 연결 요청
+    let request = indexedDB.open(dbName, version);
+
+    // 2. 오료 처리
+    request.onerror = function (event) {
+        // Handle errors.
+    };
+
+    request.onupgradeneeded = function (event) {
+        let db = event.target.result;
+
+        let objectStore = db.createObjectStore(objectStoreNm, { keyPath : "corpCode", autoIncrement : false });
+        // 5. 인덱스 생성, 중복 허용 X
+        objectStore.createIndex("corpCode", "corpCode", { unique: true });
+    };
+
+    // 데이터 읽기 + 추가
+    request.onsuccess = function (event) {
+        let db = event.target.result;
+
+        let transaction = db.transaction([objectStoreNm], "readonly");
+        let objectStore = transaction.objectStore(objectStoreNm);
+
+        // 데이터 개수 확인
+        let countRequest = objectStore.count();
+
+        countRequest.onsuccess = function () {
+            if (countRequest.result <= 0) {
+                // API call
+                CorpInfoService.getAllCorpInfoList().then((response) => {
+                    let transaction = db.transaction([objectStoreNm], "readwrite");
+                    let objectStore = transaction.objectStore(objectStoreNm);
+                    for (const { corpCode, corpName } of response.data) {
+                        corpInfoList.value.push({label : corpName, value: corpCode});
+                        objectStore.add({corpCode : corpCode, corpName : corpName});
+                    }
+                });
+            } else {
+                let transaction = db.transaction([objectStoreNm], "readonly");
+                let objectStore = transaction.objectStore(objectStoreNm);
+                let getAllRequest = objectStore.getAll();
+
+                getAllRequest.onsuccess = function (event) {
+                    for (const { corpCode, corpName } of event.target.result) {
+                        corpInfoList.value.push({label : corpName, value: corpCode});
+                    }
+                }
+            }
+        };
+    };
 }
 
 function getLargeHoldingsMonthlyTradeCnt(params) {
@@ -428,6 +505,11 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
 </script>
 
 <template>
+
+    <div class="card flex justify-center">
+        <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems" :virtualScrollerOptions="{ itemSize: 38 }" optionLabel="label" dropdown />
+    </div>
+
     <div class="card">
         <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5" dataKey="seq" @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )" selectionMode="single"  tableStyle="min-width: 50rem">
             <Column field="largeHoldingsName" header="내부자 이름"></Column>
