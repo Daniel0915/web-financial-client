@@ -22,7 +22,7 @@ const largeHoldingsStockRatioTop5 = ref([]);
 const chartDataByLargeHoldingsTradeHistory = ref();
 const chartOptionsByLargeHoldingsTradeHistory = ref();
 
-const corpCode = ref(126380);
+const corpCode = ref(null);
 const selectedLargeHoldingsStockRatioTop5 = ref();
 
 const selectList = ref([
@@ -65,20 +65,22 @@ const searchItems = (event) => {
 };
 
 onMounted(async () => {
-    let params = {
-        orderColumn : "tradeDt",
-        isDescending: true,
-        page : page.value,
-        size : rows.value,
-    };
+    await initDataApiCall();
+});
+
+async function initDataApiCall() {
+    getAllCorpInfoList();
+    if (!corpCode.value) {
+        return;
+    }
+
     await Promise.all([
         getLargeHoldingsStockRatio({ corpCode : corpCode.value } ),
         getLargeHoldingsMonthlyTradeCnt({ corpCode : corpCode.value } ),
-        searchData(params),
+        searchData({ orderColumn : "tradeDt", isDescending: true, page : page.value, size : rows.value, }),
         getLargeHoldingsStockRatioTop5( { corpCode : corpCode.value } ),
-        getAllCorpInfoList(),
     ]);
-});
+}
 
 const onSort = (event) => {
     sortField.value = event.sortField;
@@ -101,7 +103,17 @@ const isButtonEnabled = computed(() => {
     return false;
 });
 
+async function chgCorpCode(selectedItem) {
+    if (!selectedItem) {
+        return;
+    }
+
+    corpCode.value = selectedItem.value;
+    await initDataApiCall();
+}
+
 function searchData(params) {
+    params.corpCodeEq = corpCode.value;
     LargeHoldingsDetailsService.getSearchData(params).then((response) => {
         largeHoldingsDetailList.value = response.data.content;
         totalRecords.value = response.data.totalElements;
@@ -109,7 +121,6 @@ function searchData(params) {
         largeHoldingsDetailList.value.forEach((largeHoldingsDetail) => {
             largeHoldingsDetail.tradeDt = largeHoldingsDetail.tradeDt.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
             largeHoldingsDetail.url = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${largeHoldingsDetail.rceptNo}`;
-
         });
     });
 }
@@ -167,6 +178,7 @@ function getAllCorpInfoList() {
                 let getAllRequest = objectStore.getAll();
 
                 getAllRequest.onsuccess = function (event) {
+                    corpInfoList.value = [];
                     for (const { corpCode, corpName } of event.target.result) {
                         corpInfoList.value.push({label : corpName, value: corpCode});
                     }
@@ -193,6 +205,9 @@ function getLargeHoldingsStockRatioTop5(params) {
                 largeHoldingsName: largeHoldingsStockRatioTop5.value[0].largeHoldingsName
             };
             getLargeHoldingsTradeHistory(params);
+        } else {
+            chartDataByLargeHoldingsTradeHistory.value = setChartDataByLargeHoldingsTradeHistory([], '');
+            chartOptionsByLargeHoldingsTradeHistory.value = setChartOptionsByLargeHoldingsTradeHistory();
         }
     });
 }
@@ -506,132 +521,133 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
 
 <template>
 
-    <div class="card flex justify-center">
-        <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems" :virtualScrollerOptions="{ itemSize: 38 }" optionLabel="label" dropdown />
+    <div class="card flex justify-center gap-4">
+        <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems" :virtualScrollerOptions="{ itemSize: 30 }" placeholder="회사 검색" optionLabel="label" dropdown class="w-96"/>
+        <Button label="검색" @click="chgCorpCode(selectedItem)" :disabled="!selectedItem?.value"/>
     </div>
 
-    <div class="card">
-        <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5" dataKey="seq" @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )" selectionMode="single"  tableStyle="min-width: 50rem">
-            <Column field="largeHoldingsName" header="내부자 이름"></Column>
-            <Column field="stkrt" header="보유 비율">
-                <template #body="slotProps">
-                    {{ slotProps.data.stkrt }}%
-                </template>
-            </Column>
-        </DataTable>
-    </div>
+    <template v-if="corpCode">
+        <div class="card">
+            <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5" dataKey="seq" @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )" selectionMode="single"  tableStyle="min-width: 50rem">
+                <Column field="largeHoldingsName" header="내부자 이름"></Column>
+                <Column field="stkrt" header="보유 비율">
+                    <template #body="slotProps">
+                        {{ slotProps.data.stkrt }}%
+                    </template>
+                </Column>
+            </DataTable>
+        </div>
 
-    <div class="card">
-        <Chart type="line" :data="chartDataByLargeHoldingsTradeHistory" :options="chartOptionsByLargeHoldingsTradeHistory" class="h-[30rem]" />
-    </div>
+        <div class="card">
+            <Chart type="line" :data="chartDataByLargeHoldingsTradeHistory" :options="chartOptionsByLargeHoldingsTradeHistory" class="h-[30rem]" />
+        </div>
 
-    <div class="card flex justify-center">
-        <Chart type="doughnut" :data="chartData" :options="chartOptions" class="w-full md:w-[30rem]" />
-    </div>
+        <div class="card flex justify-center">
+            <Chart type="doughnut" :data="chartData" :options="chartOptions" class="w-full md:w-[30rem]" />
+        </div>
 
-    <div class="card flex justify-center">
-        <Chart type="bar" :data="chartDataByLargeHoldingsMonthlyTradeCnt" :options="chartOptionsByLargeHoldingsMonthlyTradeCnt" class="h-[30rem]" />
-    </div>
+        <div class="card flex justify-center">
+            <Chart type="bar" :data="chartDataByLargeHoldingsMonthlyTradeCnt" :options="chartOptionsByLargeHoldingsMonthlyTradeCnt" class="h-[30rem]" />
+        </div>
 
-    <div class="card">
-        <div class="font-semibold text-xl mb-4">대주주 매매 상세</div>
-        <DataTable
-            :value="largeHoldingsDetailList"
-            :rows="rows"
-            dataKey="seq"
-            :rowHover="true"
-            :loading="loading1"
-            removableSort
-            @sort="onSort"
-            showGridlines
-        >
-            <template #header>
-                <div class="card flex flex-wrap gap-4">
-                    <div class="flex-auto">
-                        <InputGroup>
-                            <DatePicker v-model="tradeDateRange" selectionMode="range"
-                                        :manualInput="false"
-                                        placeholder="거래 날짜 선택"
-                                        showIcon fluid iconDisplay="input"
-                                        inputId="tradeDateRange"
-                            >
-                                <template #footer>
-                                    <div class="flex flex-wrap gap-2">
-                                        <Button @click="tradeDateRange = null" icon="pi pi-times" severity="danger" text
-                                                raised rounded />
-                                    </div>
+        <div class="card">
+            <div class="font-semibold text-xl mb-4">대주주 매매 상세</div>
+            <DataTable
+                :value="largeHoldingsDetailList"
+                :rows="rows"
+                dataKey="seq"
+                :rowHover="true"
+                :loading="loading1"
+                removableSort
+                @sort="onSort"
+                showGridlines
+            >
+                <template #header>
+                    <div class="card flex flex-wrap gap-4">
+                        <div class="flex-auto">
+                            <InputGroup>
+                                <DatePicker v-model="tradeDateRange" selectionMode="range"
+                                            :manualInput="false"
+                                            placeholder="거래 날짜 선택"
+                                            showIcon fluid iconDisplay="input"
+                                            inputId="tradeDateRange"
+                                >
+                                    <template #footer>
+                                        <div class="flex flex-wrap gap-2">
+                                            <Button @click="tradeDateRange = null" icon="pi pi-times" severity="danger" text
+                                                    raised rounded />
+                                        </div>
+                                    </template>
+                                </DatePicker>
+                            </InputGroup>
+                        </div>
+
+                        <div class="flex-auto">
+                            <InputGroup>
+                                <Select v-model="selectedRange" :options="selectRangeList" optionLabel="name"/>
+                                <template v-if="selectedRange.name === '평단가'">
+                                    <InputNumber v-model="minAmount" placeholder="최소 금액" inputId="currency-kr" mode="currency" currency="KRW" locale="ko-KR" fluid :disabled="selectedRange.code === ''"/>
+                                    <InputGroupAddon>~</InputGroupAddon>
+                                    <InputNumber v-model="maxAmount" placeholder="최대 금액" inputId="currency-kr" mode="currency" currency="KRW" locale="ko-KR" fluid :disabled="selectedRange.code === ''"/>
                                 </template>
-                            </DatePicker>
-                        </InputGroup>
+                                <template v-else>
+                                    <InputNumber v-model="minAmount" placeholder="최소 주식" fluid :disabled="selectedRange.code === ''"/>
+                                    <InputGroupAddon>~</InputGroupAddon>
+                                    <InputNumber v-model="maxAmount" placeholder="최대 주식" fluid :disabled="selectedRange.code === ''"/>
+                                </template>
+                            </InputGroup>
+                        </div>
+
+                        <div class="flex-auto">
+                            <InputGroup>
+                                <Select v-model="selected" :options="selectList" optionLabel="name" placeholder="검색어 선택" />
+                                <InputText :placeholder="selected.code === '' ? '검색어 선택해주세요.' : '검색어 입력해주세요.'" v-model="inputText" :disabled="selected.code === ''"/>
+                                <Button label="검색" @click="searchBtn(selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount)" :disabled="!isButtonEnabled" />
+                            </InputGroup>
+                        </div>
                     </div>
-
-                    <div class="flex-auto">
-                        <InputGroup>
-                            <Select v-model="selectedRange" :options="selectRangeList" optionLabel="name"/>
-                            <template v-if="selectedRange.name === '평단가'">
-                                <InputNumber v-model="minAmount" placeholder="최소 금액" inputId="currency-kr" mode="currency" currency="KRW" locale="ko-KR" fluid :disabled="selectedRange.code === ''"/>
-                                <InputGroupAddon>~</InputGroupAddon>
-                                <InputNumber v-model="maxAmount" placeholder="최대 금액" inputId="currency-kr" mode="currency" currency="KRW" locale="ko-KR" fluid :disabled="selectedRange.code === ''"/>
-                            </template>
-                            <template v-else>
-                                <InputNumber v-model="minAmount" placeholder="최소 주식" fluid :disabled="selectedRange.code === ''"/>
-                                <InputGroupAddon>~</InputGroupAddon>
-                                <InputNumber v-model="maxAmount" placeholder="최대 주식" fluid :disabled="selectedRange.code === ''"/>
-                            </template>
-                        </InputGroup>
-                    </div>
-
-                    <div class="flex-auto">
-                        <InputGroup>
-                            <Select v-model="selected" :options="selectList" optionLabel="name" placeholder="검색어 선택" />
-                            <InputText :placeholder="selected.code === '' ? '검색어 선택해주세요.' : '검색어 입력해주세요.'" v-model="inputText" :disabled="selected.code === ''"/>
-                            <Button label="검색" @click="searchBtn(selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount)" :disabled="!isButtonEnabled" />
-                        </InputGroup>
-                    </div>
-                </div>
-            </template>
-
-            <template #empty> 데이터가 없습니다. </template>
-            <template #loading> Loading data. Please wait. </template>
-            <Column field="largeHoldingsName" header="내부자 이름" style="min-width: 12rem"></Column>
-            <Column field="tradeReason" header="매매 이유" style="min-width: 12rem"></Column>
-            <Column field="stockType" header="증권 종류" style="min-width: 12rem"></Column>
-            <Column field="tradeDt" header="거래 날짜" :sortable="true" style="min-width: 12rem"></Column>
-            <Column field="changeStockAmount" header="거래량" :sortable="true" style="min-width: 12rem">
-                <template #body="slotProps">
-                    {{ formatAccountingNumber(slotProps.data.changeStockAmount) }}주
                 </template>
-            </Column>
-            <Column field="unitStockPrice" header="평단가" :sortable="true" style="min-width: 12rem">
-                <template #body="slotProps">
-                    {{ formatAccountingNumber(slotProps.data.unitStockPrice) }}원
-                </template>
-            </Column>
-            <Column field="afterStockAmount" header="보유주식" :sortable="true" style="min-width: 12rem">
-                <template #body="slotProps">
-                    {{ formatAccountingNumber(slotProps.data.afterStockAmount) }}주
-                </template>
-            </Column>
-            <Column field="url" header="URL" style="min-width: 12rem">
-                <template #body="slotProps">
-                    <Button
-                        label="Dart 공시 URL"
-                        icon="pi pi-external-link"
-                        class="p-button-outlined p-button-sm"
-                        @click="windowOpen(slotProps.data.url)"
-                    />
-                </template>
-            </Column>
-        </DataTable>
-        <Paginator
-            :rows="rows"
-            :totalRecords="totalRecords"
-            :first="page * rows"
-            @page="onPageChange($event, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount)"
-        />
-    </div>
 
-
+                <template #empty> 데이터가 없습니다. </template>
+                <template #loading> Loading data. Please wait. </template>
+                <Column field="largeHoldingsName" header="내부자 이름" style="min-width: 12rem"></Column>
+                <Column field="tradeReason" header="매매 이유" style="min-width: 12rem"></Column>
+                <Column field="stockType" header="증권 종류" style="min-width: 12rem"></Column>
+                <Column field="tradeDt" header="거래 날짜" :sortable="true" style="min-width: 12rem"></Column>
+                <Column field="changeStockAmount" header="거래량" :sortable="true" style="min-width: 12rem">
+                    <template #body="slotProps">
+                        {{ formatAccountingNumber(slotProps.data.changeStockAmount) }}주
+                    </template>
+                </Column>
+                <Column field="unitStockPrice" header="평단가" :sortable="true" style="min-width: 12rem">
+                    <template #body="slotProps">
+                        {{ formatAccountingNumber(slotProps.data.unitStockPrice) }}원
+                    </template>
+                </Column>
+                <Column field="afterStockAmount" header="보유주식" :sortable="true" style="min-width: 12rem">
+                    <template #body="slotProps">
+                        {{ formatAccountingNumber(slotProps.data.afterStockAmount) }}주
+                    </template>
+                </Column>
+                <Column field="url" header="URL" style="min-width: 12rem">
+                    <template #body="slotProps">
+                        <Button
+                            label="Dart 공시 URL"
+                            icon="pi pi-external-link"
+                            class="p-button-outlined p-button-sm"
+                            @click="windowOpen(slotProps.data.url)"
+                        />
+                    </template>
+                </Column>
+            </DataTable>
+            <Paginator
+                :rows="rows"
+                :totalRecords="totalRecords"
+                :first="page * rows"
+                @page="onPageChange($event, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount)"
+            />
+        </div>
+    </template>
 </template>
 
 <style scoped lang="scss">
@@ -641,5 +657,9 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
 
 :deep(.p-datatable-scrollable .p-frozen-column) {
     font-weight: bold;
+}
+
+.w-96 {
+    width: 24rem; /* 약 384px */
 }
 </style>

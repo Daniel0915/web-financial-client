@@ -387,7 +387,6 @@ request.onsuccess = function (event) {
     index.openKeyCursor(null, "nextunique").onsuccess = function (event) {
         var cursor = event.target.result;
         if (cursor) {
-            console.log(cursor.value);
             // 항목에 대해 작업을 수행합니다.
             cursor.continue();
         }

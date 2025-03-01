@@ -14,9 +14,9 @@ const router = createRouter({
                     component: () => import('@/views/Dashboard.vue')
                 },
                 {
-                    path: '/indexedDB',
-                    name: 'indexedDB',
-                    component: () => import('@/views/IndexedDB.vue')
+                    path: '/exec-ownership',
+                    name: 'execOwnership',
+                    component: () => import('@/views/ExecOwnership.vue')
                 },
                 {
                     path: '/large-holding',
