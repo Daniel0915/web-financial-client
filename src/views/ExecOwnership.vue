@@ -1,466 +1,620 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
-import BestSellingWidget from '@/components/dashboard/BestSellingWidget.vue';
-import NotificationsWidget from '@/components/dashboard/NotificationsWidget.vue';
-import RecentSalesWidget from '@/components/dashboard/RecentSalesWidget.vue';
-import RevenueStreamWidget from '@/components/dashboard/RevenueStreamWidget.vue';
-import StatsWidget from '@/components/dashboard/StatsWidget.vue';
-import { ChannelTypeEnum } from "@/data/enum/ChannelTypeEnum";
+import { LargeHoldingsDetailsService } from "@/service/LargeHoldingsDetailsService";
+import { computed, onMounted, ref } from "vue";
+import { MoneyUtil } from "@/utils/MoneyUtil";
+import { CorpInfoIndexedDBService } from "@/service/indexedDB/CorpInfoIndexedDBService";
+import { useRoute, useRouter } from 'vue-router';
+import { ExecOwnershipDetailsService } from "@/service/ExecOwnershipDetailsService";
 
+const loading1 = ref(false);
+const execOwnershipDetailsList = ref([]);
+const page = ref(0);
+const totalRecords = ref(0);
+const rows = ref(10);
+const tradeDateRange = ref(null);
+const sortField = ref('tradeDt');
+const sortOrder = ref(true); // 내림차순 default
 
-// TODO : index db
-if (!window.indexedDB) {
-    window.alert("121");
-}
+const chartData = ref();
+const chartOptions = ref(null);
+const chartDataByLargeHoldingsMonthlyTradeCnt = ref();
+const chartOptionsByLargeHoldingsMonthlyTradeCnt = ref();
 
-const customerData = [
-    { ssn: "444-44-4444", name: "Bill",     age: 35,    email: "bill@company.com" },
-    { ssn: "555-55-5555", name: "Donna",    age: 32,    email: "donna@home.org" }
-];
+const largeHoldingsStockRatioTop5 = ref([]);
 
+const chartDataByLargeHoldingsTradeHistory = ref();
+const chartOptionsByLargeHoldingsTradeHistory = ref();
 
-const dbName = "the_name";
-const version = 5;
-const objectStoreNm = "customers";
+const corpCode = ref(useRoute().query.corpCode);
+const router = useRouter();  // useRouter 로 라우터 인스턴스를 가져옴
+const selectedLargeHoldingsStockRatioTop5 = ref();
 
-// 1. indexedDB 연결 요청
-var request = indexedDB.open(dbName, version);
+const selectList = ref([
+    { name: "검색어 선택", code: "" },
+    { name: "내부자 이름", code: "largeHoldingsNameContains" },
+    { name: "매매 사유", code: "tradeReasonContains" },
+    { name: "증권 종류", code: "stockTypeContains" },
+]);
+const selected = ref(selectList.value[0]);
+const inputText = ref(null);
 
+const selectRangeList = ref([
+    { name: "범위 선택(거래량, 평단가, 보유주식)", code: "" },
+    { name: "거래량", code: "changeStockAmount" },
+    { name: "평단가", code: "unitStockPrice" },
+    { name: "보유주식", code: "afterStockAmount" },
+]);
 
-// 2. 오료 처리
-request.onerror = function (event) {
-    // Handle errors.
+const selectedRange = ref(selectRangeList.value[0]);
+const minAmount = ref(null);
+const maxAmount = ref(null);
+
+const corpInfoList = ref([]);
+const selectedItem = ref();
+const filteredItems = ref();
+
+const searchItems = (event) => {
+    let query = event.query;
+    let _filteredItems = [];
+
+    for (let i = 0; i < corpInfoList.value.length; i++) {
+        let item = corpInfoList.value[i];
+
+        if (item.label.toLowerCase().indexOf(query.toLowerCase()) === 0) {
+            _filteredItems.push(item);
+        }
+    }
+
+    filteredItems.value = _filteredItems;
 };
 
+onMounted(async () => {
+    await initDataApiCall();
+});
 
-// 3-1. 데이터베이스 초기화
-// 3-2. 호출 시기 : version 이 생성되거나 버전이 올라갈 때 호출 됨.
-// 3-3. 객체 저장소와 인덱스를 생성
-request.onupgradeneeded = function (event) {
-    var db = event.target.result;
+async function initDataApiCall() {
+    corpInfoList.value = [];
+    for (const { corpCode, corpName } of await CorpInfoIndexedDBService.getAllCorpInfoList()) {
+        corpInfoList.value.push({ label: corpName, value: corpCode });
+    }
 
-    // 4-1. 객체 저장소 생성
-    // 4-2. 키 생성기(autoIncrement)
-    var objectStore = db.createObjectStore(objectStoreNm, { keyPath : "ssn", autoIncrement : true });
+    if (!corpCode.value) {
+        return;
+    }
 
+    const findCorpInfo = await CorpInfoIndexedDBService.getByCorpCode(corpCode.value);
+    selectedItem.value = findCorpInfo.corpName;
 
-    // 5. 인덱스 생성, 중복 허용 O
-    objectStore.createIndex("name", "name", { unique: false });
+    await Promise.all([
+        getLargeHoldingsStockRatio({ corpCode : corpCode.value } ),
+        getLargeHoldingsMonthlyTradeCnt({ corpCode : corpCode.value } ),
+        searchData({ orderColumn : "tradeDt", isDescending: true, page : page.value, size : rows.value, }),
+        getLargeHoldingsStockRatioTop5( { corpCode : corpCode.value } ),
+    ]);
+}
 
-    // 5. 인덱스 생성, 중복 허용 X
-    objectStore.createIndex("email", "email", { unique: true });
+const onSort = (event) => {
+    sortField.value = event.sortField;
+    sortOrder.value = event.sortOrder;
+    const param = getSearchParam(0, selected.value, inputText.value, tradeDateRange.value, sortField.value, sortOrder.value, selectedRange.value, minAmount.value, maxAmount.value);
+    searchData(param);
+};
 
-    // 6. 데이터 추가
-    objectStore.transaction.oncomplete = function (event) {
-        // 객체 저장소 => customers
-        var customerObjectStore = db.transaction("customers", "readwrite").objectStore("customers");
+const isButtonEnabled = computed(() => {
+    // init selected value case
+    if (selected.value.code === '') {
+        return true;
+    }
 
-        customerData.forEach(function (customer) {
-            customerObjectStore.add(customer);
+    // another selected value case
+    if (selected.value.code !== '' && inputText.value) {
+        return true;
+    }
+
+    return false;
+});
+
+async function chgCorpCode(selectedItem) {
+    if (!selectedItem) {
+        return;
+    }
+
+    corpCode.value = selectedItem.value;
+    await router.push({
+        query: {
+            corpCode: selectedItem.value
+        }
+    });
+    await initDataApiCall();
+}
+
+function searchData(params) {
+    params.corpCodeEq = corpCode.value;
+    ExecOwnershipDetailsService.getSearchData(params).then((response) => {
+        execOwnershipDetailsList.value = response.data.content;
+        totalRecords.value = response.data.totalElements;
+        loading1.value = false;
+        execOwnershipDetailsList.value.forEach((largeHoldingsDetail) => {
+            largeHoldingsDetail.tradeDt = largeHoldingsDetail.tradeDt.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
+            largeHoldingsDetail.url = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${largeHoldingsDetail.rceptNo}`;
         });
-    };
-};
-
-// 7. 데이터 읽기
-request.onsuccess = function (event) {
-    var db = event.target.result;
-
-    // ################### 데이터 읽기 [start] ###################
-
-    // 8-1. 트랜잭션 생성 (readonly)
-    // 8-2. 첫번째 인자는 트랜잭션이 확장될 객체 저장소의 목록
-    // 8-3. 빈 배열이면, 모든 객체 저장소에 대핸 트랜잭션 확장
-    // 8-4. 두번째 인자 값이 없으면 읽기 전용(readonly)
-    // var transaction = db.transaction(["customers"], "readonly");
-    // var objectStore = transaction.objectStore("customers");
-    //
-    // // 9. 모든 데이터 읽기
-    // var getAllRequest = objectStore.getAll();
-    //
-    // getAllRequest.onsuccess = function (event) {
-    //     console.log("All Customers : ", event.target.result);
-    // };
-    //
-    // getAllRequest.onerror = function (event) {
-    //     console.erro("Error fetching data : ", event.target.error);
-    // }
-
-    // ################### 데이터 읽기 [start] ###################
-
-
-    // ################### 데이터 추가 [start] ###################
-
-    // // 10. 데이터 추가(트랜잭션 read write)
-    // var transaction = db.transaction(["customers"], "readwrite");
-    //
-    // // 11. 트랜잭션은 이벤트 루프(Event loop) 와 매우 밀접하게 연관되어 있습니다.
-    // // 12. 트랜잭션을 만들어 놓고 사용하지 않은 채 이벤트 루프로 돌아가게 된다면 트랜잭션은 비활성화 상태가 됩니다
-    // // 13. 트랜잭션을 활성화 상태로 유지하는 유일한 방법은 트랜잭션에 그것을 요청
-    // // 14. TRANSACTION_INACTIVE_ERR 라는 에러 코드가 나타나기 시작한다면, 뭔가 잘못되기 시작한 것입니다
-    //
-    // const newCustomerData = [
-    //     { ssn: "777-11-1111", name: "Peter", age: 1,    email: "ufo9363@company.com" },
-    // ];
-    //
-    //
-    // transaction.oncomplete = function (event) {
-    // };
-    //
-    // transaction.onerror = function (event) {
-    //     console.error(event);
-    //     // 에러 처리
-    // };
-    //
-    // var objectStore = transaction.objectStore("customers");
-    //
-    // for (var i in newCustomerData) {
-    //     // add() 주의점 : 같은 키를 가진 데이터가 데이터베이스 안에 존재하지 않아야 한다는 점 주의
-    //     // 대안으로 데이터를 수정하고 싶거나, 혹은 이미 데이터가 있건 말건 상관 없다면 put() 사용
-    //     var request = objectStore.add(newCustomerData[i]);
-    //     request.onsuccess = function (event) {
-    //     }
-    // }
-    // // ################### 데이터 추가 [end] ###################
-    //
-    // // ################### 데이터 삭제 [start] ###################
-    // var requestDelete = objectStore.delete("444-44-4444");
-    // requestDelete.onsuccess = function (event) {
-    //     console.log(event.target.result);
-    // }
-
-
-    // ################### 데이터 삭제 [start] ###################
-    // var request = db
-    //     .transaction(["customers"], "readwrite")
-    //     .objectStore("customers")
-    //     .delete("444-44-4444");
-    // request.onsuccess = function (event) {
-    //     // It's gone!
-    // };
-    // ################### 데이터 삭제 [end] ###################
-
-    // ################### 데이터 조회 [start] ###################
-    // var transaction = db.transaction(["customers"]);
-    // var objectStore = transaction.objectStore("customers");
-    // var request = objectStore.get("555-55-5555");
-    //
-    // request.onerror = function (event) {
-    //     console.error(event);
-    // }
-    //
-    // request.onsuccess = function (event) {
-    //     console.log(event.target.result === request.result);
-    // }
-
-    // 데이터 조회 단순화, transaction 특정 모드 없이(default 는 readonly)
-    // db.transaction("customers").objectStore("customers").get("555-55-5555").onsuccess = function (event) {
-    //     console.log(event.target.result.name);
-    // }
-    // ################### 데이터 조회 [end] ###################
-
-
-    // ################### 데이터 업데이트 [start] ###################
-    var objectStore = db
-        .transaction(["customers"], "readwrite")
-        .objectStore("customers");
-    var request = objectStore.get("777-11-1111");
-
-    request.onerror = function (event) {
-
-        // Handle errors!
-    };
-    request.onsuccess = function (event) {
-        var data = event.target.result;
-        // // 업데이트 X
-        data.age = 14;
-
-        // 업데이트 O
-        var requestUpdate = objectStore.put(data);
-        requestUpdate.onerror = function (event) {
-            console.log("error");
-            // error handle
-        };
-
-        requestUpdate.onsuccess = function (event) {
-            // success update
-            console.log("update");
-
-        };
-    };
-
-    // ################### 데이터 업데이트 [end] ###################
+    });
+}
+function getLargeHoldingsStockRatio(params) {
+    LargeHoldingsDetailsService.getLargeHoldingsStockRatio(params).then((response) => {
+        chartData.value = setChartData(response.data);
+        chartOptions.value = setChartOptions();
+    });
 }
 
-// ################### 데이터 추가 [start] ###################
 
-request.onsuccess = function (event) {
-    var db = event.target.result;
-    var transaction = db.transaction(["customers"], "readwrite");
+function getLargeHoldingsMonthlyTradeCnt(params) {
+    LargeHoldingsDetailsService.getLargeHoldingsMonthlyTradeCnt(params).then((response) => {
+        chartDataByLargeHoldingsMonthlyTradeCnt.value = setChartDataByLargeHoldingsMonthlyTradeCnt(response.data);
+        chartOptionsByLargeHoldingsMonthlyTradeCnt.value = setChartOptionsByLargeHoldingsMonthlyTradeCnt();
+    });
+}
 
-    const newCustomerData = [
-        { ssn: "444-44-4444", name: "Bill", age: 35, email: "bill@company.com" },
-        { ssn: "555-55-5555", name: "Donna", age: 32, email: "donna@home.org" }
-    ];
+function getLargeHoldingsStockRatioTop5(params) {
+    LargeHoldingsDetailsService.getLargeHoldingsStockRatioTop5(params).then((response) => {
+        largeHoldingsStockRatioTop5.value = response.data;
 
-    transaction.oncomplete = function (event) {
-    };
-
-    transaction.onerror = function (event) {
-    };
-
-    var objectStore = transaction.objectStore("customers");
-
-    for (var i in newCustomerData) {
-        var request = objectStore.add(newCustomerData[i]);
-        request.onsuccess = function (event) {
-        }
-    }
-};
-
-// ################### 데이터 추가 [end] ###################
-
-
-
-// ################### 커서 사용하기 [start] ###################
-/*request.onsuccess = function (event) {
-    var db = event.target.result;
-    var objectStore = db.transaction("customers").objectStore("customers");
-
-    // get() 과 다르게 cursor 는 모든 값을 탐색할 수 있음.
-    objectStore.openCursor().onsuccess = function (event) {
-        var cursor = event.target.result;
-        if (cursor) {
-            alert(`Name for SSN ${cursor.key} is ${cursor.value.name}`);
-            cursor.continue();
+        if (largeHoldingsStockRatioTop5.value?.length) {
+            const params = {
+                corpCode: corpCode.value,
+                largeHoldingsName: largeHoldingsStockRatioTop5.value[0].largeHoldingsName
+            };
+            getLargeHoldingsTradeHistory(params);
         } else {
-            alert("No more entries!");
+            chartDataByLargeHoldingsTradeHistory.value = setChartDataByLargeHoldingsTradeHistory([], '');
+            chartOptionsByLargeHoldingsTradeHistory.value = setChartOptionsByLargeHoldingsTradeHistory();
         }
+    });
+}
+
+function getLargeHoldingsTradeHistory(params) {
+    LargeHoldingsDetailsService.getLargeHoldingsTradeHistory(params).then((response) => {
+        chartDataByLargeHoldingsTradeHistory.value = setChartDataByLargeHoldingsTradeHistory(response.data, params.largeHoldingsName);
+        chartOptionsByLargeHoldingsTradeHistory.value = setChartOptionsByLargeHoldingsTradeHistory();
+    });
+}
+
+const setChartDataByLargeHoldingsTradeHistory = (largeHoldingsTradeHistoryList, largeHoldingsName) => {
+    let chatData = {
+        labels : [],
+        data : [],
+    };
+
+    for (let largeHoldingsTradeHistory of largeHoldingsTradeHistoryList) {
+        chatData.labels.push(formatDateStr(largeHoldingsTradeHistory.tradeDt));
+        chatData.data.push(largeHoldingsTradeHistory.afterStockAmount);
     }
 
-    // 커서를 사용하는 일반적인 패턴 중 하나
-    // 객체 저장소의 모든 객체를 검색하여 array 에 추가
-    var customers = [];
+    const documentStyle = getComputedStyle(document.documentElement);
 
-    objectStore.openCursor().onsuccess = function (event) {
-        var cursor = event.target.result;
-        if (cursor) {
-            customers.push(cursor.value);
-            cursor.continue();
-        } else {
-            alert(`Got all customers ${customers}`);
-            console.log(customers);
+    return {
+        labels: chatData.labels,
+        datasets: [
+            {
+                label: largeHoldingsName,
+                fill: false,
+                borderColor: documentStyle.getPropertyValue('--p-cyan-500'),
+                yAxisID: 'y',
+                tension: 0.4,
+                data: chatData.data
+            },
+        ]
+    };
+}
+
+const setChartOptionsByLargeHoldingsTradeHistory = () => {
+    const documentStyle = getComputedStyle(document.documentElement);
+    const textColor = documentStyle.getPropertyValue("--p-text-color");
+    const textColorSecondary = documentStyle.getPropertyValue("--p-text-muted-color");
+    const surfaceBorder = documentStyle.getPropertyValue("--p-content-border-color");
+
+    return {
+        stacked: false,
+        maintainAspectRatio: false,
+        aspectRatio: 0.6,
+        plugins: {
+            legend: {
+                labels: {
+                    color: textColor
+                }
+            }
+        },
+        scales: {
+            x: {
+                ticks: {
+                    color: textColorSecondary
+                },
+                grid: {
+                    color: surfaceBorder
+                }
+            },
+            y: {
+                type: "linear",
+                display: true,
+                position: "left",
+                ticks: {
+                    color: textColorSecondary
+                },
+                grid: {
+                    color: surfaceBorder
+                }
+            },
         }
     };
+}
 
-    /!*
-     * getAllyKeys() 동일한 기능이지만, IndexedDB 표준이 아니기 때문에 추후 삭제될 예정
-     * 그리고 getAll 과 openCursor 동일하지만 성능상 비용이 getAll 이 더 비용이 발생합니다.
-     * 에를 들어 getAll() 을 사용할 때, Gecko 는 모든 객체를 한 번에 생성합니다.
-     * 만약 키 각각을 보는 것에만 관심이 있다면, openCursor 사용하는 것이 getAll() 을 사용하는 것보다
-     * 훨씬 효율적입니다. 반면에 객체 저장소의 모든 객체 배열을 가져오려는 경우에는 getAll() 사용하세요.
-     *!/
-    objectStore.getAll().onsuccess = function (event) {
-        alert(`Got all customers : ${event.target.result}`);
+function searchBtn(selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount) {
+    const param = getSearchParam(0, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount);
+    searchData(param);
+}
+
+function onPageChange(event, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount) {
+    const param = getSearchParam(event.page, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount);
+    searchData(param);
+}
+
+function getSearchParam(inputPage, selected, inputText, tradeDateRange, orderColumn, sortOrder, selectedRange, minAmount, maxAmount) {
+    page.value = inputPage;
+    const tradeDtGoe = !tradeDateRange ? null : formatDate(tradeDateRange[0]);
+    const tradeDtLoe = !tradeDateRange ? null : formatDate(tradeDateRange[1]);
+    const key = selected.code;
+
+    let param = {
+        orderColumn: orderColumn ?? "tradeDt",
+        isDescending: sortOrder === null || sortOrder === undefined || sortOrder === '' ? true : (sortOrder === -1),
+        page: page.value,
+        size: rows.value,
+        ...(key && inputText && { [key]: inputText }),
+        ...(tradeDtGoe && { ['tradeDtGoe']: tradeDtGoe }),
+        ...(tradeDtLoe && { ['tradeDtLoe']: tradeDtLoe }),
     };
-};*/
-// ################### 커서 사용하기 [end] ###################
 
-// ################### index 사용하기 [start] ###################
+    if (selectedRange && selectedRange.code) {
+        param[`${selectedRange.code}Goe`] = minAmount ?? '';
+        param[`${selectedRange.code}Loe`] = maxAmount ?? '';
+    }
 
-// 먼저, request.onupgradeneeeded로 index를 생성해주세요:
-// objectStore.createIndex("name", "name");
-// 그렇지 않을 경우 DOMException이 발생합니다.
+    return param;
+}
 
-request.onsuccess = function (event) {
-    var db = event.target.result;
-    var objectStore = db.transaction("customers").objectStore("customers");
-    var index = objectStore.index("name");
+function formatDate(date) {
+    if (!date) return null;
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+}
 
+function formatDateStr(dateString) {
+    if (dateString.length !== 8) return 'Invalid date';
 
-    /*
-     * name 고유하지 않기 때문에 name 값이 "Donna" 로 설정된 항목이 하나 이상 있을 수 있습니다.
-     * 이 경우 항상 가장 낮은 키 값인 결과 하나만 얻게 됨.
-     */
-    // index.get("donna@home.org").onsuccess = function (event) {
-    //     alert(`Donna's SSN is ${event.target.result.ssn}`);
-    // };
+    const year = dateString.substring(0, 4);
+    const month = dateString.substring(4, 6);
+    const day = dateString.substring(6, 8);
 
-    /*
-     * 특정 "name" index 로 모든항목에 액세스해야 하는 경우
-     * 인덱스들 마다 2 가지 다른 종류의 cursor 열수 있음
-     * 1. 일반적인 커서는 인덱스 속성을 객체 저장소의 객체에 매핑합니다.
-     * 2. 그리고 키 ㅓ서는 객체를 객체 저장소에 저장하기 위해 사용된 키에 인덱스를 매핑합니다.
-     */
+    return `${year}.${month}.${day}`;
+}
 
-    // 일반적인 커서를 사용해서 고객 레코드 전체를 가져오기
-    /*index.openCursor().onsuccess = function (event) {
-        var cursor = event.target.result;
-        if (cursor) {
-            // cursor.key 는 "Bill"과 같은 이름이며,
-            // cursor.value 는 객체 전체를 의미합니다.
-            alert(`Name: ${cursor.key}, SSN: ${cursor.value.ssn}, email: ${cursor.value.email}`)
-            cursor.continue();
+function windowOpen(url) {
+    window.open(url, '_blank');
+}
+
+// ############### 대주주 주식 보유 비중 [start] ###############
+const setChartData = (largeHoldingsStockRatioList) => {
+    let chartData = {
+        labels : ['기타'],
+        data : [100],
+        backgroundColor: [],
+        hoverBackgroundColor: [],
+    };
+
+    const colors = ['emerald', 'green', 'lime', 'orange', 'amber', 'yellow', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose'];
+    const colorsLength = colors.length;
+    const documentStyle = getComputedStyle(document.body);
+
+    if (largeHoldingsStockRatioList?.length) {
+        let sumStkrt = 0;
+
+        for (let index in largeHoldingsStockRatioList) {
+            chartData.labels.push(largeHoldingsStockRatioList[index].largeHoldingsName);
+            chartData.data.push(largeHoldingsStockRatioList[index].stkrt);
+            sumStkrt += largeHoldingsStockRatioList[index].stkrt;
         }
-    };*/
+        chartData.data[0] -= sumStkrt;
 
-    // 키 커서를 사용해서 고객 레코드 객체 키를 가져오기
-    // index.openKeyCursor().onsuccess = function (event) {
-    //     var cursor = event.target.result;
-    //     if (cursor) {
-    //         // cursor.key는 "Bill"과 같은 이름이며, cursor.value는 사회보장번호(SSN)입니다.
-    //         // 저장된 객체의 나머지 부분을 직접적으로 가져올 방법은 없습니다.
-    //         alert("Name: " + cursor.key + ", SSN: " + cursor.primaryKey);
-    //         cursor.continue();
-    //     }
-    // };
+        for (let index in chartData.labels) {
+            const colorIndex = Number(index) % ((colorsLength - 1));
+            chartData.backgroundColor.push(documentStyle.getPropertyValue(`--p-${colors[colorIndex]}-500`));
+            chartData.hoverBackgroundColor.push(documentStyle.getPropertyValue(`--p-${colors[colorIndex]}-400`));
+        }
+    }
+
+    return {
+        labels: chartData.labels,
+        datasets: [
+            {
+                data: chartData.data,
+                backgroundColor: chartData.backgroundColor,
+                hoverBackgroundColor: chartData.hoverBackgroundColor
+            }
+        ]
+    };
 };
 
-// ################### index 사용하기 [end] ###################
+const setChartOptions = () => {
+    const documentStyle = getComputedStyle(document.documentElement);
+    const textColor = documentStyle.getPropertyValue('--p-text-color');
 
-// ################### 커서들의 범위와 방향을 특정하기 [start] ###################
-request.onsuccess = function (event) {
-    var db = event.target.result;
-    var objectStore = db.transaction("customers").objectStore("customers");
-    var index = objectStore.index("name");
-
-    /*
-     * openCursor() 또는 openKeyCursor()의 첫 번째 인자로 사용할 수 있는 키 범위 객체(key range object)를
-     * 사용하여 커서에서 볼 값의 범위를 제한할 수 있습니다.
-     * 단일 키만 허용하도록 하는 key range 를 만들거나 하한 또는 상한값이 있는 key range 를 만들 수 있습니다.
-     * 또는 하한 및 상한 값이 모두있는 key range 를 만들 수 있습니다.
-     * 범위는 "closed"(즉, key range 가 주어진 값까지 포함)거나 "open"(즉, key range 가 주어진 값은 포함하지 않음)일 수 있습니다.
-     * 다음은 key range 가 작동하는 방식입니다:
-     */
-
-    // "Donna"만을 조회
-    var singleKeyRange = IDBKeyRange.only("Donna");
-
-    // "Bill"을 포함한, "Bill" 이후 모든 값을 조회
-    var lowerBoundKeyRange = IDBKeyRange.lowerBound("Bill");
-
-    // "Bill"을 제외한, "Bill" 다음 모든 값을 조회
-    var lowerBoundOpenKeyRange = IDBKeyRange.lowerBound("Bill", true);
-
-    // "Donna"를 제외한, 이전 모든 값을 조회
-    var upperBoundOpenKeyRange = IDBKeyRange.upperBound("Donna", true);
-
-    // "Donna"를 제외한, 를 제외한, "Bill"과 "Donna" 사이 모든 값을 조회
-    var boundKeyRange = IDBKeyRange.bound("Bill", "Donna", false, true);
-
-    // 위 키 범위 중 하나를 사용하려면, openCursor()/openKeyCursor()에 첫 번째 인자로 넘겨주세요.
-    index.openCursor(singleKeyRange).onsuccess = function (event) {
-        var cursor = event.target.result;
-        if (cursor) {
-            // console.log(cursor.value);
-            cursor.continue();
-        }
-    };
-
-    // IndexedDB 에서 Cursor 를 사용하여 내림차순으로 반복하기
-    index.openCursor(lowerBoundKeyRange, 'prev').onsuccess = function (event) {
-        var cursor = event.target.result;
-        if (cursor) {
-            // console.log(cursor.value);
-            cursor.continue();
-        }
-    };
-
-    // 범위를 제한하지 않고 단순히 방향만 변경하는 경우
-    // 만약 결과를 제한하지 않고 단순히 커서 방향만 변경하고 싶다면, 첫 번째 인자로 null 을 전달하면 됩니다.
-    index.openCursor(null, "prev").onsuccess = function (event) {
-        var cursor = event.target.result;
-        if (cursor) {
-            // Do something with the entries.
-            // console.log(cursor.value);
-            cursor.continue();
-        }
-    };
-
-    // 중복 제거하면서 반복하기
-    /*
-     * "name"과 같은 인덱스가 고유하지 않은 경우, 동일한 값이 여러 엔트리에 존재할 수 있습니다.
-     * 그러나 오브젝트 스토어에서는 키가 항상 고유해야 하므로 이런 상황은 발생하지 않습니다.
-     * 만약 중복된 값을 필터링하면서 커서를 반복하고 싶다면, direction 파라미터로 "nextunique"(오름차순) 또는 "prevunique"(내림차순)을 전달하면 됩니다.
-     * nextunique 또는 prevunique 를 사용할 경우, 동일한 키 값 중 가장 낮은 키의 항목만 반환됩니다.
-     */
-
-    index.openKeyCursor(null, "nextunique").onsuccess = function (event) {
-        var cursor = event.target.result;
-        if (cursor) {
-            // 항목에 대해 작업을 수행합니다.
-            cursor.continue();
+    return {
+        plugins: {
+            legend: {
+                labels: {
+                    cutout: '60%',
+                    color: textColor
+                }
+            }
         }
     };
 };
-// ################### 커서들의 범위와 방향을 특정하기 [end] ###################
+// ############### 대주주 실질 Top 5 [end] ###############
+
+// ############### 대주주 매매 월별 [start] ###############
+const setChartDataByLargeHoldingsMonthlyTradeCnt = (largeHoldingsMonthlyTradeCntList) =>  {
+    let chartDataMap = new Map();
+    for (const { monthlyCountDTOList, sellOrBuyType } of largeHoldingsMonthlyTradeCntList) {
+        const sign = sellOrBuyType === "sell" ? -1 : 1;
+        for (const { month, count } of monthlyCountDTOList) {
+            if (!chartDataMap.has(month)) {
+                chartDataMap.set( month, {[sellOrBuyType] : sign * Number(count)} );
+            } else {
+                chartDataMap.get(month)[sellOrBuyType] = sign * Number(count);
+            }
+        }
+    }
+
+    let chartData = {
+        labels : [],
+        sellData : [],
+        buyData : [],
+    };
+
+    for (let key of chartDataMap.keys()) {
+        const year = key.slice(0, 4);
+        const month = key.slice(4, 6);
+
+        chartData.labels.push(`${year.slice(2)}년 ${Number(month)}월`);
+        let sellBuyObj = chartDataMap.get(key);
+
+        let sellCount = sellBuyObj?.sell ?? 0;
+        chartData.sellData.push(sellCount);
+
+        let buyCount = sellBuyObj?.buy ?? 0;
+        chartData.buyData.push(buyCount);
+    }
+
+    const documentStyle = getComputedStyle(document.documentElement);
+
+    return {
+        labels: chartData.labels,
+        datasets: [
+            {
+                type: 'bar',
+                label: '매수 건수',
+                backgroundColor: documentStyle.getPropertyValue('--p-red-500'),
+                data: chartData.buyData
+            },
+            {
+                type: 'bar',
+                label: '매도 건수',
+                backgroundColor: documentStyle.getPropertyValue('--p-blue-500'),
+                data: chartData.sellData
+            },
+        ]
+    };
+};
+const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
+    const documentStyle = getComputedStyle(document.documentElement);
+    const textColor = documentStyle.getPropertyValue('--p-text-color');
+    const textColorSecondary = documentStyle.getPropertyValue('--p-text-muted-color');
+    const surfaceBorder = documentStyle.getPropertyValue('--p-content-border-color');
+
+    return {
+        maintainAspectRatio: false,
+        aspectRatio: 0.8,
+        plugins: {
+            tooltips: {
+                mode: 'index',
+                intersect: false
+            },
+            legend: {
+                labels: {
+                    color: textColor
+                }
+            }
+        },
+        scales: {
+            x: {
+                stacked: true,
+                ticks: {
+                    color: textColorSecondary
+                },
+                grid: {
+                    color: surfaceBorder
+                }
+            },
+            y: {
+                title: {
+                    display: true,
+                    text: "거래건수"
+                },
+                stacked: true,
+                ticks: {
+                    color: textColorSecondary
+                },
+                grid: {
+                    color: surfaceBorder
+                }
+            }
+        }
+    };
+}
 
 
 
-
-
-// EventSource 에서 받은 메시지를 저장할 상태
-// const messages = ref([]); // 실시간 메시지를 담는 배열
-//
-// const userId = 1;
-// const url = `/api/redis/pub-sub/get-flux-message?userId=${userId}`;
-// let eventSource = new EventSource(url); // EventSource 인스턴스
-//
-//
-// // EventSource 를 초기화하는 함수
-// function initEventSource() {
-//     // 메시지가 수신되었을 때
-//     eventSource.onmessage = (event) => {
-//         // const message = JSON.parse(event.data);
-//         const message = JSON.parse(event.data);
-//         callPush(message);
-//     }
-// }
-//
-// // 컴포넌트가 마운트되었을 때, EventSource 를 초기화
-// onMounted(() => {
-//     initEventSource();
-// });
-//
-// // 컴포넌트가 언마운트될 때 EventSource 닫기
-// onUnmounted(() => {
-//     if (eventSource) {
-//         eventSource.close();
-//     }
-// });
-//
-// function callPush(message) {
-//     Notification.requestPermission().then(perm => {
-//         if (perm === "granted") {
-//             const notification = new Notification("[알림 Push]", {
-//                 body: `${ChannelTypeEnum[message.channelType]}`,
-//                 icon: "favicon.ico",
-//             });
-//
-//             notification.addEventListener("click", e => {
-//                 // TODO : 클릭 시, 지분 공시 페이지로 이동
-//                 const url = "https://velog.io/@dev-redo/%ED%81%B4%EB%A6%B0%EC%BD%94%EB%93%9C-%EC%9E%90%EB%B0%94%EC%8A%A4%ED%81%AC%EB%A6%BD%ED%8A%B8-7%EC%9E%A5-%EA%B0%9D%EC%B2%B4-%EB%8B%A4%EB%A3%A8%EA%B8%B0";
-//
-//                 // 알림 창을 닫기
-//                 notification.close();
-//                 window.open(url, "_blank");  // 새 탭으로 URL 열기
-//             })
-//         }
-//     })
-// }
+// ############### 대주주 매매 월별 [end] ###############
 
 </script>
 
 <template>
-    <div class="grid grid-cols-12 gap-8">
-        <StatsWidget />
 
-        <div class="col-span-12 xl:col-span-6">
-            <RecentSalesWidget />
-            <BestSellingWidget />
-        </div>
-        <div class="col-span-12 xl:col-span-6">
-            <RevenueStreamWidget />
-            <NotificationsWidget />
-        </div>
+    <div class="card flex justify-center gap-4">
+        <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems" :virtualScrollerOptions="{ itemSize: 30 }" placeholder="회사 검색" optionLabel="label" dropdown class="w-96"/>
+        <Button label="검색" @click="chgCorpCode(selectedItem)" :disabled="!selectedItem?.value"/>
     </div>
+
+    <template v-if="corpCode">
+        <div class="card">
+            <div class="font-semibold text-xl mb-4">대주주 리스트 Top5</div>
+            <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5" dataKey="seq" @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )" selectionMode="single"  tableStyle="min-width: 50rem" class="mb-9">
+                <Column field="largeHoldingsName" header="내부자 이름"></Column>
+                <Column field="stkrt" header="보유 비율">
+                    <template #body="slotProps">
+                        {{ slotProps.data.stkrt }}%
+                    </template>
+                </Column>
+            </DataTable>
+            <Chart type="line" :data="chartDataByLargeHoldingsTradeHistory" :options="chartOptionsByLargeHoldingsTradeHistory" class="h-[30rem]" />
+        </div>
+
+        <div class="card flex justify-center">
+            <div class="font-semibold text-xl mb-4">대주주 주식 보유 비중</div>
+            <Chart type="doughnut" :data="chartData" :options="chartOptions" class="w-full md:w-[30rem]" />
+        </div>
+
+        <div class="card flex justify-center">
+            <div class="font-semibold text-xl mb-4">대주주 매매 월별 동향</div>
+            <Chart type="bar" :data="chartDataByLargeHoldingsMonthlyTradeCnt" :options="chartOptionsByLargeHoldingsMonthlyTradeCnt" class="h-[30rem]" />
+        </div>
+
+        <div class="card">
+            <div class="font-semibold text-xl mb-4">대주주 매매 상세</div>
+            <DataTable
+                :value="execOwnershipDetailsList"
+                :rows="rows"
+                dataKey="seq"
+                :rowHover="true"
+                :loading="loading1"
+                removableSort
+                @sort="onSort"
+                showGridlines
+            >
+                <template #header>
+                    <div class="card flex flex-wrap gap-4">
+                        <div class="flex-auto">
+                            <InputGroup>
+                                <DatePicker v-model="tradeDateRange" selectionMode="range"
+                                            :manualInput="false"
+                                            placeholder="거래 날짜 선택"
+                                            showIcon fluid iconDisplay="input"
+                                            inputId="tradeDateRange"
+                                >
+                                    <template #footer>
+                                        <div class="flex flex-wrap gap-2">
+                                            <Button @click="tradeDateRange = null" icon="pi pi-times" severity="danger" text
+                                                    raised rounded />
+                                        </div>
+                                    </template>
+                                </DatePicker>
+                            </InputGroup>
+                        </div>
+
+                        <div class="flex-auto">
+                            <InputGroup>
+                                <Select v-model="selectedRange" :options="selectRangeList" optionLabel="name"/>
+                                <template v-if="selectedRange.name === '평단가'">
+                                    <InputNumber v-model="minAmount" placeholder="최소 금액" inputId="currency-kr" mode="currency" currency="KRW" locale="ko-KR" fluid :disabled="selectedRange.code === ''"/>
+                                    <InputGroupAddon>~</InputGroupAddon>
+                                    <InputNumber v-model="maxAmount" placeholder="최대 금액" inputId="currency-kr" mode="currency" currency="KRW" locale="ko-KR" fluid :disabled="selectedRange.code === ''"/>
+                                </template>
+                                <template v-else>
+                                    <InputNumber v-model="minAmount" placeholder="최소 주식" fluid :disabled="selectedRange.code === ''"/>
+                                    <InputGroupAddon>~</InputGroupAddon>
+                                    <InputNumber v-model="maxAmount" placeholder="최대 주식" fluid :disabled="selectedRange.code === ''"/>
+                                </template>
+                            </InputGroup>
+                        </div>
+
+                        <div class="flex-auto">
+                            <InputGroup>
+                                <Select v-model="selected" :options="selectList" optionLabel="name" placeholder="검색어 선택" />
+                                <InputText :placeholder="selected.code === '' ? '검색어 선택해주세요.' : '검색어 입력해주세요.'" v-model="inputText" :disabled="selected.code === ''"/>
+                                <Button label="검색" @click="searchBtn(selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount)" :disabled="!isButtonEnabled" />
+                            </InputGroup>
+                        </div>
+                    </div>
+                </template>
+
+                <template #empty> 데이터가 없습니다. </template>
+                <template #loading> Loading data. Please wait. </template>
+                <Column field="execOwnershipName" header="임원 이름" style="min-width: 12rem"></Column>
+                <Column field="isuExctvOfcps" header="직위" style="min-width: 12rem"></Column>
+                <Column field="isuMainShrholdr" header="주요 주주" style="min-width: 12rem"></Column>
+                <Column field="isuExctvRgistAt" header="등기여부" style="min-width: 12rem"></Column>
+                <Column field="tradeReason" header="매매 이유" style="min-width: 12rem"></Column>
+                <Column field="stockType" header="증권 종류" style="min-width: 12rem"></Column>
+                <Column field="tradeDt" header="거래 날짜" :sortable="true" style="min-width: 12rem"></Column>
+                <Column field="changeStockAmount" header="거래량" :sortable="true" style="min-width: 12rem">
+                    <template #body="slotProps">
+                        {{ MoneyUtil.formatAccountingNumber(slotProps.data.changeStockAmount) }}주
+                    </template>
+                </Column>
+                <Column field="unitStockPrice" header="평단가" :sortable="true" style="min-width: 12rem">
+                    <template #body="slotProps">
+                        {{ MoneyUtil.formatAccountingNumber(slotProps.data.unitStockPrice) }}원
+                    </template>
+                </Column>
+                <Column field="afterStockAmount" header="보유주식" :sortable="true" style="min-width: 12rem">
+                    <template #body="slotProps">
+                        {{ MoneyUtil.formatAccountingNumber(slotProps.data.afterStockAmount) }}주
+                    </template>
+                </Column>
+                <Column field="url" header="URL" style="min-width: 12rem">
+                    <template #body="slotProps">
+                        <Button
+                            label="Dart 공시 URL"
+                            icon="pi pi-external-link"
+                            class="p-button-outlined p-button-sm"
+                            @click="windowOpen(slotProps.data.url)"
+                        />
+                    </template>
+                </Column>
+            </DataTable>
+            <Paginator
+                :rows="rows"
+                :totalRecords="totalRecords"
+                :first="page * rows"
+                @page="onPageChange($event, selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount)"
+            />
+        </div>
+    </template>
 </template>
+
+<style scoped lang="scss">
+:deep(.p-datatable-frozen-tbody) {
+    font-weight: bold;
+}
+
+:deep(.p-datatable-scrollable .p-frozen-column) {
+    font-weight: bold;
+}
+
+.w-96 {
+    width: 24rem; /* 약 384px */
+}
+</style>

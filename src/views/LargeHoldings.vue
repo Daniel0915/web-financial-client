@@ -1,7 +1,9 @@
 <script setup>
 import { LargeHoldingsDetailsService } from "@/service/LargeHoldingsDetailsService";
-import { computed, ref, onMounted } from "vue";
-import { CorpInfoService } from "@/service/CorpInfoService";
+import { computed, onMounted, ref } from "vue";
+import { MoneyUtil } from "@/utils/MoneyUtil";
+import { CorpInfoIndexedDBService } from "@/service/indexedDB/CorpInfoIndexedDBService";
+import { useRoute, useRouter } from 'vue-router';
 
 const loading1 = ref(false);
 const largeHoldingsDetailList = ref([]);
@@ -22,7 +24,8 @@ const largeHoldingsStockRatioTop5 = ref([]);
 const chartDataByLargeHoldingsTradeHistory = ref();
 const chartOptionsByLargeHoldingsTradeHistory = ref();
 
-const corpCode = ref(null);
+const corpCode = ref(useRoute().query.corpCode);
+const router = useRouter();  // useRouter 로 라우터 인스턴스를 가져옴
 const selectedLargeHoldingsStockRatioTop5 = ref();
 
 const selectList = ref([
@@ -45,10 +48,10 @@ const selectedRange = ref(selectRangeList.value[0]);
 const minAmount = ref(null);
 const maxAmount = ref(null);
 
-
 const corpInfoList = ref([]);
 const selectedItem = ref();
 const filteredItems = ref();
+
 const searchItems = (event) => {
     let query = event.query;
     let _filteredItems = [];
@@ -69,10 +72,17 @@ onMounted(async () => {
 });
 
 async function initDataApiCall() {
-    getAllCorpInfoList();
+    corpInfoList.value = [];
+    for (const { corpCode, corpName } of await CorpInfoIndexedDBService.getAllCorpInfoList()) {
+        corpInfoList.value.push({ label: corpName, value: corpCode });
+    }
+
     if (!corpCode.value) {
         return;
     }
+
+    const findCorpInfo = await CorpInfoIndexedDBService.getByCorpCode(corpCode.value);
+    selectedItem.value = findCorpInfo.corpName;
 
     await Promise.all([
         getLargeHoldingsStockRatio({ corpCode : corpCode.value } ),
@@ -109,6 +119,11 @@ async function chgCorpCode(selectedItem) {
     }
 
     corpCode.value = selectedItem.value;
+    await router.push({
+        query: {
+            corpCode: selectedItem.value
+        }
+    });
     await initDataApiCall();
 }
 
@@ -131,62 +146,6 @@ function getLargeHoldingsStockRatio(params) {
     });
 }
 
-function getAllCorpInfoList() {
-    const dbName = "stock";
-    const version = 1;
-    const objectStoreNm = "corpInfo";
-    // 1. indexedDB 연결 요청
-    let request = indexedDB.open(dbName, version);
-
-    // 2. 오료 처리
-    request.onerror = function (event) {
-        // Handle errors.
-    };
-
-    request.onupgradeneeded = function (event) {
-        let db = event.target.result;
-
-        let objectStore = db.createObjectStore(objectStoreNm, { keyPath : "corpCode", autoIncrement : false });
-        // 5. 인덱스 생성, 중복 허용 X
-        objectStore.createIndex("corpCode", "corpCode", { unique: true });
-    };
-
-    // 데이터 읽기 + 추가
-    request.onsuccess = function (event) {
-        let db = event.target.result;
-
-        let transaction = db.transaction([objectStoreNm], "readonly");
-        let objectStore = transaction.objectStore(objectStoreNm);
-
-        // 데이터 개수 확인
-        let countRequest = objectStore.count();
-
-        countRequest.onsuccess = function () {
-            if (countRequest.result <= 0) {
-                // API call
-                CorpInfoService.getAllCorpInfoList().then((response) => {
-                    let transaction = db.transaction([objectStoreNm], "readwrite");
-                    let objectStore = transaction.objectStore(objectStoreNm);
-                    for (const { corpCode, corpName } of response.data) {
-                        corpInfoList.value.push({label : corpName, value: corpCode});
-                        objectStore.add({corpCode : corpCode, corpName : corpName});
-                    }
-                });
-            } else {
-                let transaction = db.transaction([objectStoreNm], "readonly");
-                let objectStore = transaction.objectStore(objectStoreNm);
-                let getAllRequest = objectStore.getAll();
-
-                getAllRequest.onsuccess = function (event) {
-                    corpInfoList.value = [];
-                    for (const { corpCode, corpName } of event.target.result) {
-                        corpInfoList.value.push({label : corpName, value: corpCode});
-                    }
-                }
-            }
-        };
-    };
-}
 
 function getLargeHoldingsMonthlyTradeCnt(params) {
     LargeHoldingsDetailsService.getLargeHoldingsMonthlyTradeCnt(params).then((response) => {
@@ -286,14 +245,6 @@ const setChartOptionsByLargeHoldingsTradeHistory = () => {
             },
         }
     };
-}
-
-
-function formatAccountingNumber(number) {
-    const absNumber = Math.abs(number).toLocaleString('en-US'); // 천 단위 콤마 추가
-
-    // 음수는 괄호로 표시, 양수는 그대로 표시
-    return number < 0 ? `(${absNumber})` : absNumber;
 }
 
 function searchBtn(selected, inputText, tradeDateRange, sortField, sortOrder, selectedRange, minAmount, maxAmount) {
@@ -528,7 +479,8 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
 
     <template v-if="corpCode">
         <div class="card">
-            <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5" dataKey="seq" @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )" selectionMode="single"  tableStyle="min-width: 50rem">
+            <div class="font-semibold text-xl mb-4">대주주 리스트 Top5</div>
+            <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5" dataKey="seq" @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )" selectionMode="single"  tableStyle="min-width: 50rem" class="mb-9">
                 <Column field="largeHoldingsName" header="내부자 이름"></Column>
                 <Column field="stkrt" header="보유 비율">
                     <template #body="slotProps">
@@ -536,17 +488,16 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
                     </template>
                 </Column>
             </DataTable>
-        </div>
-
-        <div class="card">
             <Chart type="line" :data="chartDataByLargeHoldingsTradeHistory" :options="chartOptionsByLargeHoldingsTradeHistory" class="h-[30rem]" />
         </div>
 
         <div class="card flex justify-center">
+            <div class="font-semibold text-xl mb-4">대주주 주식 보유 비중</div>
             <Chart type="doughnut" :data="chartData" :options="chartOptions" class="w-full md:w-[30rem]" />
         </div>
 
         <div class="card flex justify-center">
+            <div class="font-semibold text-xl mb-4">대주주 매매 월별 동향</div>
             <Chart type="bar" :data="chartDataByLargeHoldingsMonthlyTradeCnt" :options="chartOptionsByLargeHoldingsMonthlyTradeCnt" class="h-[30rem]" />
         </div>
 
@@ -616,17 +567,17 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
                 <Column field="tradeDt" header="거래 날짜" :sortable="true" style="min-width: 12rem"></Column>
                 <Column field="changeStockAmount" header="거래량" :sortable="true" style="min-width: 12rem">
                     <template #body="slotProps">
-                        {{ formatAccountingNumber(slotProps.data.changeStockAmount) }}주
+                        {{ MoneyUtil.formatAccountingNumber(slotProps.data.changeStockAmount) }}주
                     </template>
                 </Column>
                 <Column field="unitStockPrice" header="평단가" :sortable="true" style="min-width: 12rem">
                     <template #body="slotProps">
-                        {{ formatAccountingNumber(slotProps.data.unitStockPrice) }}원
+                        {{ MoneyUtil.formatAccountingNumber(slotProps.data.unitStockPrice) }}원
                     </template>
                 </Column>
                 <Column field="afterStockAmount" header="보유주식" :sortable="true" style="min-width: 12rem">
                     <template #body="slotProps">
-                        {{ formatAccountingNumber(slotProps.data.afterStockAmount) }}주
+                        {{ MoneyUtil.formatAccountingNumber(slotProps.data.afterStockAmount) }}주
                     </template>
                 </Column>
                 <Column field="url" header="URL" style="min-width: 12rem">
