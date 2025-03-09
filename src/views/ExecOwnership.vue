@@ -86,7 +86,7 @@ async function initDataApiCall() {
     selectedItem.value = findCorpInfo.corpName;
 
     await Promise.all([
-        getLargeHoldingsStockRatio({ corpCode : corpCode.value } ),
+        getStockRatio({ corpCode : corpCode.value } ),
         getLargeHoldingsMonthlyTradeCnt({ corpCode : corpCode.value } ),
         searchData({ orderColumn : "tradeDt", isDescending: true, page : page.value, size : rows.value, }),
         getStockRatioTop5( { corpCode : corpCode.value } ),
@@ -140,8 +140,8 @@ function searchData(params) {
         });
     });
 }
-function getLargeHoldingsStockRatio(params) {
-    LargeHoldingsDetailsService.getLargeHoldingsStockRatio(params).then((response) => {
+function getStockRatio(params) {
+    ExecOwnershipDetailsService.getStockRatio(params).then((response) => {
         chartData.value = setChartData(response.data);
         chartOptions.value = setChartOptions();
     });
@@ -305,8 +305,8 @@ function windowOpen(url) {
     window.open(url, '_blank');
 }
 
-// ############### 대주주 주식 보유 비중 [start] ###############
-const setChartData = (largeHoldingsStockRatioList) => {
+// ############### 임원 주식 보유 비중 [start] ###############
+const setChartData = (stockRatioList) => {
     let chartData = {
         labels : ['기타'],
         data : [100],
@@ -318,13 +318,14 @@ const setChartData = (largeHoldingsStockRatioList) => {
     const colorsLength = colors.length;
     const documentStyle = getComputedStyle(document.body);
 
-    if (largeHoldingsStockRatioList?.length) {
+    if (stockRatioList?.length) {
         let sumStkrt = 0;
 
-        for (let index in largeHoldingsStockRatioList) {
-            chartData.labels.push(largeHoldingsStockRatioList[index].largeHoldingsName);
-            chartData.data.push(largeHoldingsStockRatioList[index].stkrt);
-            sumStkrt += largeHoldingsStockRatioList[index].stkrt;
+        for (let index in stockRatioList) {
+            let spStockLmpRate = stockRatioList[index].spStockLmpRate === 0 ? 0.001 : stockRatioList[index].spStockLmpRate;
+            chartData.labels.push(stockRatioList[index].repror);
+            chartData.data.push(spStockLmpRate);
+            sumStkrt += spStockLmpRate;
         }
         chartData.data[0] -= sumStkrt;
 
@@ -362,7 +363,7 @@ const setChartOptions = () => {
         }
     };
 };
-// ############### 대주주 실질 Top 5 [end] ###############
+// ############### 임원 실질 Top 5 [end] ###############
 
 // ############### 대주주 매매 월별 [start] ###############
 const setChartDataByLargeHoldingsMonthlyTradeCnt = (largeHoldingsMonthlyTradeCntList) =>  {
@@ -495,7 +496,7 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
         </div>
 
         <div class="card flex justify-center">
-            <div class="font-semibold text-xl mb-4">대주주 주식 보유 비중</div>
+            <div class="font-semibold text-xl mb-4">임원 주식 보유 비중</div>
             <Chart type="doughnut" :data="chartData" :options="chartOptions" class="w-full md:w-[30rem]" />
         </div>
 

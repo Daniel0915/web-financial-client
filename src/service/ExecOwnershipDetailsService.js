@@ -8,13 +8,13 @@ export const ExecOwnershipDetailsService = {
         return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/search/exec-ownership?${queryParams}`).then((res) => res.json());
     },
 
-    getLargeHoldingsStockRatio(params) {
+    getStockRatio(params) {
         const queryParams = params
             ? Object.keys(params)
                 .map( (k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k] || '')}`)
                 .join('&')
             : '';
-        return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/large-holdings-stock-ratio?${queryParams}`).then((res) => res.json());
+        return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/exec-ownership-ratio?${queryParams}`).then((res) => res.json());
     },
 
     getLargeHoldingsMonthlyTradeCnt(params) {
