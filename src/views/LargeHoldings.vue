@@ -480,7 +480,10 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
     <template v-if="corpCode">
         <div class="card">
             <div class="font-semibold text-xl mb-4">대주주 리스트 Top5</div>
-            <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5" dataKey="seq" @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )" selectionMode="single"  tableStyle="min-width: 50rem" class="mb-9">
+            <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5"
+                       dataKey="seq"
+                       @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )"
+                       selectionMode="single" tableStyle="min-width: 50rem" class="mb-9">
                 <Column field="largeHoldingsName" header="내부자 이름"></Column>
                 <Column field="stkrt" header="보유 비율">
                     <template #body="slotProps">

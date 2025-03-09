@@ -26,21 +26,21 @@ export const ExecOwnershipDetailsService = {
         return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/large-holdings-monthly-trade-cnt?${queryParams}`).then((res) => res.json());
     },
 
-    getLargeHoldingsStockRatioTop5(params) {
+    getStockRatioTop5(params) {
         const queryParams = params
             ? Object.keys(params)
                 .map( (k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k] || '')}`)
                 .join('&')
             : '';
-        return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/large-holdings-top-5?${queryParams}`).then((res) => res.json());
+        return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/exec-ownership-top-5?${queryParams}`).then((res) => res.json());
     },
 
-    getLargeHoldingsTradeHistory(params) {
+    getTradeHistory(params) {
         const queryParams = params
             ? Object.keys(params)
                 .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k] || '')}`)
                 .join('&')
             : '';
-        return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/large-holdings-trade-history?${queryParams}`).then((res) => res.json());
+        return fetch(`${import.meta.env.VITE_APP_API_URL}/stock/exec-ownership-trade-list?${queryParams}`).then((res) => res.json());
     },
 };

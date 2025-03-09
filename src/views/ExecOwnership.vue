@@ -20,14 +20,14 @@ const chartOptions = ref(null);
 const chartDataByLargeHoldingsMonthlyTradeCnt = ref();
 const chartOptionsByLargeHoldingsMonthlyTradeCnt = ref();
 
-const largeHoldingsStockRatioTop5 = ref([]);
+const stockRatioTop5 = ref([]);
 
-const chartDataByLargeHoldingsTradeHistory = ref();
-const chartOptionsByLargeHoldingsTradeHistory = ref();
+const chartDataByTradeHistory = ref();
+const chartOptionsByTradeHistory = ref();
 
 const corpCode = ref(useRoute().query.corpCode);
 const router = useRouter();  // useRouter 로 라우터 인스턴스를 가져옴
-const selectedLargeHoldingsStockRatioTop5 = ref();
+const selectedStockRatioTop5 = ref();
 
 const selectList = ref([
     { name: "검색어 선택", code: "" },
@@ -89,7 +89,7 @@ async function initDataApiCall() {
         getLargeHoldingsStockRatio({ corpCode : corpCode.value } ),
         getLargeHoldingsMonthlyTradeCnt({ corpCode : corpCode.value } ),
         searchData({ orderColumn : "tradeDt", isDescending: true, page : page.value, size : rows.value, }),
-        getLargeHoldingsStockRatioTop5( { corpCode : corpCode.value } ),
+        getStockRatioTop5( { corpCode : corpCode.value } ),
     ]);
 }
 
@@ -155,37 +155,37 @@ function getLargeHoldingsMonthlyTradeCnt(params) {
     });
 }
 
-function getLargeHoldingsStockRatioTop5(params) {
-    LargeHoldingsDetailsService.getLargeHoldingsStockRatioTop5(params).then((response) => {
-        largeHoldingsStockRatioTop5.value = response.data;
+function getStockRatioTop5(params) {
+    ExecOwnershipDetailsService.getStockRatioTop5(params).then((response) => {
+        stockRatioTop5.value = response.data;
 
-        if (largeHoldingsStockRatioTop5.value?.length) {
+        if (stockRatioTop5.value?.length) {
             const params = {
                 corpCode: corpCode.value,
-                largeHoldingsName: largeHoldingsStockRatioTop5.value[0].largeHoldingsName
+                execOwnershipName: stockRatioTop5.value[0].repror
             };
-            getLargeHoldingsTradeHistory(params);
+            getTradeHistory(params);
         } else {
-            chartDataByLargeHoldingsTradeHistory.value = setChartDataByLargeHoldingsTradeHistory([], '');
-            chartOptionsByLargeHoldingsTradeHistory.value = setChartOptionsByLargeHoldingsTradeHistory();
+            chartDataByTradeHistory.value = setChartDataByTradeHistory([], '');
+            chartOptionsByTradeHistory.value = setChartOptionsByTradeHistory();
         }
     });
 }
 
-function getLargeHoldingsTradeHistory(params) {
-    LargeHoldingsDetailsService.getLargeHoldingsTradeHistory(params).then((response) => {
-        chartDataByLargeHoldingsTradeHistory.value = setChartDataByLargeHoldingsTradeHistory(response.data, params.largeHoldingsName);
-        chartOptionsByLargeHoldingsTradeHistory.value = setChartOptionsByLargeHoldingsTradeHistory();
+function getTradeHistory(params) {
+    ExecOwnershipDetailsService.getTradeHistory(params).then((response) => {
+        chartDataByTradeHistory.value = setChartDataByTradeHistory(response.data, params.execOwnershipName);
+        chartOptionsByTradeHistory.value = setChartOptionsByTradeHistory();
     });
 }
 
-const setChartDataByLargeHoldingsTradeHistory = (largeHoldingsTradeHistoryList, largeHoldingsName) => {
+const setChartDataByTradeHistory = (tradeHistoryList, name) => {
     let chatData = {
         labels : [],
         data : [],
     };
 
-    for (let largeHoldingsTradeHistory of largeHoldingsTradeHistoryList) {
+    for (let largeHoldingsTradeHistory of tradeHistoryList) {
         chatData.labels.push(formatDateStr(largeHoldingsTradeHistory.tradeDt));
         chatData.data.push(largeHoldingsTradeHistory.afterStockAmount);
     }
@@ -196,7 +196,7 @@ const setChartDataByLargeHoldingsTradeHistory = (largeHoldingsTradeHistoryList, 
         labels: chatData.labels,
         datasets: [
             {
-                label: largeHoldingsName,
+                label: name,
                 fill: false,
                 borderColor: documentStyle.getPropertyValue('--p-cyan-500'),
                 yAxisID: 'y',
@@ -207,7 +207,7 @@ const setChartDataByLargeHoldingsTradeHistory = (largeHoldingsTradeHistoryList, 
     };
 }
 
-const setChartOptionsByLargeHoldingsTradeHistory = () => {
+const setChartOptionsByTradeHistory = () => {
     const documentStyle = getComputedStyle(document.documentElement);
     const textColor = documentStyle.getPropertyValue("--p-text-color");
     const textColorSecondary = documentStyle.getPropertyValue("--p-text-muted-color");
@@ -480,16 +480,18 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
 
     <template v-if="corpCode">
         <div class="card">
-            <div class="font-semibold text-xl mb-4">대주주 리스트 Top5</div>
-            <DataTable v-model:selection="selectedLargeHoldingsStockRatioTop5" :value="largeHoldingsStockRatioTop5" dataKey="seq" @rowClick="getLargeHoldingsTradeHistory({ corpCode : corpCode, largeHoldingsName : $event.data.largeHoldingsName } )" selectionMode="single"  tableStyle="min-width: 50rem" class="mb-9">
-                <Column field="largeHoldingsName" header="내부자 이름"></Column>
-                <Column field="stkrt" header="보유 비율">
+            <div class="font-semibold text-xl mb-4">임원 리스트 Top5</div>
+            <DataTable v-model:selection="selectedStockRatioTop5" :value="stockRatioTop5" dataKey="rceptNo"
+                       @rowClick="getTradeHistory({ corpCode : corpCode, execOwnershipName : $event.data.repror } )"
+                       selectionMode="single" tableStyle="min-width: 50rem" class="mb-9">
+                <Column field="repror" header="내부자 이름"></Column>
+                <Column field="spStockLmpRate" header="보유 비율">
                     <template #body="slotProps">
-                        {{ slotProps.data.stkrt }}%
+                        {{ slotProps.data.spStockLmpRate }}%
                     </template>
                 </Column>
             </DataTable>
-            <Chart type="line" :data="chartDataByLargeHoldingsTradeHistory" :options="chartOptionsByLargeHoldingsTradeHistory" class="h-[30rem]" />
+            <Chart type="line" :data="chartDataByTradeHistory" :options="chartOptionsByTradeHistory" class="h-[30rem]" />
         </div>
 
         <div class="card flex justify-center">
