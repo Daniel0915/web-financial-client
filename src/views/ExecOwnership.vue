@@ -1,9 +1,8 @@
 <script setup>
-import { LargeHoldingsDetailsService } from "@/service/LargeHoldingsDetailsService";
 import { computed, onMounted, ref } from "vue";
 import { MoneyUtil } from "@/utils/MoneyUtil";
 import { CorpInfoIndexedDBService } from "@/service/indexedDB/CorpInfoIndexedDBService";
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute, useRouter } from "vue-router";
 import { ExecOwnershipDetailsService } from "@/service/ExecOwnershipDetailsService";
 
 const loading1 = ref(false);
@@ -17,8 +16,8 @@ const sortOrder = ref(true); // 내림차순 default
 
 const chartData = ref();
 const chartOptions = ref(null);
-const chartDataByLargeHoldingsMonthlyTradeCnt = ref();
-const chartOptionsByLargeHoldingsMonthlyTradeCnt = ref();
+const chartDataByMonthlyTradeCnt = ref();
+const chartOptionsByMonthlyTradeCnt = ref();
 
 const stockRatioTop5 = ref([]);
 
@@ -87,7 +86,7 @@ async function initDataApiCall() {
 
     await Promise.all([
         getStockRatio({ corpCode : corpCode.value } ),
-        getLargeHoldingsMonthlyTradeCnt({ corpCode : corpCode.value } ),
+        getMonthlyTradeCnt({ corpCode : corpCode.value } ),
         searchData({ orderColumn : "tradeDt", isDescending: true, page : page.value, size : rows.value, }),
         getStockRatioTop5( { corpCode : corpCode.value } ),
     ]);
@@ -134,9 +133,9 @@ function searchData(params) {
         execOwnershipDetailsList.value = response.data.content;
         totalRecords.value = response.data.totalElements;
         loading1.value = false;
-        execOwnershipDetailsList.value.forEach((largeHoldingsDetail) => {
-            largeHoldingsDetail.tradeDt = largeHoldingsDetail.tradeDt.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
-            largeHoldingsDetail.url = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${largeHoldingsDetail.rceptNo}`;
+        execOwnershipDetailsList.value.forEach((detail) => {
+            detail.tradeDt = detail.tradeDt.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
+            detail.url = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${detail.rceptNo}`;
         });
     });
 }
@@ -148,10 +147,10 @@ function getStockRatio(params) {
 }
 
 
-function getLargeHoldingsMonthlyTradeCnt(params) {
-    LargeHoldingsDetailsService.getLargeHoldingsMonthlyTradeCnt(params).then((response) => {
-        chartDataByLargeHoldingsMonthlyTradeCnt.value = setChartDataByLargeHoldingsMonthlyTradeCnt(response.data);
-        chartOptionsByLargeHoldingsMonthlyTradeCnt.value = setChartOptionsByLargeHoldingsMonthlyTradeCnt();
+function getMonthlyTradeCnt(params) {
+    ExecOwnershipDetailsService.getMonthlyTradeCnt(params).then((response) => {
+        chartDataByMonthlyTradeCnt.value = setChartDataByMonthlyTradeCnt(response.data);
+        chartOptionsByMonthlyTradeCnt.value = setChartOptionsByMonthlyTradeCnt();
     });
 }
 
@@ -185,9 +184,9 @@ const setChartDataByTradeHistory = (tradeHistoryList, name) => {
         data : [],
     };
 
-    for (let largeHoldingsTradeHistory of tradeHistoryList) {
-        chatData.labels.push(formatDateStr(largeHoldingsTradeHistory.tradeDt));
-        chatData.data.push(largeHoldingsTradeHistory.afterStockAmount);
+    for (let tradeHistory of tradeHistoryList) {
+        chatData.labels.push(formatDateStr(tradeHistory.tradeDt));
+        chatData.data.push(tradeHistory.afterStockAmount);
     }
 
     const documentStyle = getComputedStyle(document.documentElement);
@@ -365,10 +364,10 @@ const setChartOptions = () => {
 };
 // ############### 임원 실질 Top 5 [end] ###############
 
-// ############### 대주주 매매 월별 [start] ###############
-const setChartDataByLargeHoldingsMonthlyTradeCnt = (largeHoldingsMonthlyTradeCntList) =>  {
+// ############### 임원 매매 월별 [start] ###############
+const setChartDataByMonthlyTradeCnt = (monthlyTradeCntList) =>  {
     let chartDataMap = new Map();
-    for (const { monthlyCountDTOList, sellOrBuyType } of largeHoldingsMonthlyTradeCntList) {
+    for (const { monthlyCountDTOList, sellOrBuyType } of monthlyTradeCntList) {
         const sign = sellOrBuyType === "sell" ? -1 : 1;
         for (const { month, count } of monthlyCountDTOList) {
             if (!chartDataMap.has(month)) {
@@ -419,7 +418,7 @@ const setChartDataByLargeHoldingsMonthlyTradeCnt = (largeHoldingsMonthlyTradeCnt
         ]
     };
 };
-const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
+const setChartOptionsByMonthlyTradeCnt = () =>  {
     const documentStyle = getComputedStyle(document.documentElement);
     const textColor = documentStyle.getPropertyValue('--p-text-color');
     const textColorSecondary = documentStyle.getPropertyValue('--p-text-muted-color');
@@ -468,7 +467,7 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
 
 
 
-// ############### 대주주 매매 월별 [end] ###############
+// ############### 임원 매매 월별 [end] ###############
 
 </script>
 
@@ -488,7 +487,7 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
                 <Column field="repror" header="내부자 이름"></Column>
                 <Column field="spStockLmpRate" header="보유 비율">
                     <template #body="slotProps">
-                        {{ slotProps.data.spStockLmpRate }}%
+                        {{ slotProps.data.spStockLmpRate === 0 ? '0.001% 미만' : `${slotProps.data.spStockLmpRate}%` }}
                     </template>
                 </Column>
             </DataTable>
@@ -501,12 +500,12 @@ const setChartOptionsByLargeHoldingsMonthlyTradeCnt = () =>  {
         </div>
 
         <div class="card flex justify-center">
-            <div class="font-semibold text-xl mb-4">대주주 매매 월별 동향</div>
-            <Chart type="bar" :data="chartDataByLargeHoldingsMonthlyTradeCnt" :options="chartOptionsByLargeHoldingsMonthlyTradeCnt" class="h-[30rem]" />
+            <div class="font-semibold text-xl mb-4">임원 매매 월별 동향</div>
+            <Chart type="bar" :data="chartDataByMonthlyTradeCnt" :options="chartOptionsByMonthlyTradeCnt" class="h-[30rem]" />
         </div>
 
         <div class="card">
-            <div class="font-semibold text-xl mb-4">대주주 매매 상세</div>
+            <div class="font-semibold text-xl mb-4">임원 매매 상세</div>
             <DataTable
                 :value="execOwnershipDetailsList"
                 :rows="rows"
