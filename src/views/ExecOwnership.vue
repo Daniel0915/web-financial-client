@@ -31,7 +31,7 @@ const selectedLargeHoldingsStockRatioTop5 = ref();
 
 const selectList = ref([
     { name: "검색어 선택", code: "" },
-    { name: "내부자 이름", code: "largeHoldingsNameContains" },
+    { name: "임원 이름", code: "execOwnershipNameContains" },
     { name: "매매 사유", code: "tradeReasonContains" },
     { name: "증권 종류", code: "stockTypeContains" },
 ]);
