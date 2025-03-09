@@ -1,7 +1,7 @@
 <script setup>
 import { TradeService } from "@/service/TradeService";
-import { computed, ref, onMounted } from "vue";
-import { useRouter } from 'vue-router';
+import { onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { DateUtil } from "@/utils/DateUtil";
 import { MoneyUtil } from "@/utils/MoneyUtil";
 import { CorpInfoIndexedDBService } from "@/service/indexedDB/CorpInfoIndexedDBService";

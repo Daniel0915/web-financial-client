@@ -7,6 +7,7 @@ import Aura from '@primevue/themes/aura';
 import PrimeVue from 'primevue/config';
 import ConfirmationService from 'primevue/confirmationservice';
 import ToastService from 'primevue/toastservice';
+import { PushService } from "@/service/PushService";
 
 import '@/assets/styles.scss';
 import '@/assets/tailwind.css';
@@ -27,3 +28,6 @@ app.use(ToastService);
 app.use(ConfirmationService);
 
 app.mount('#app');
+
+PushService.connect();
+
