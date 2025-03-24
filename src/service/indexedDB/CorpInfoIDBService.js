@@ -1,10 +1,32 @@
 import { CorpInfoService } from "@/service/CorpInfoService";
 
-const DB_NAME = "stock";
-const DB_VERSION = 1;
+const DB_VERSION        = 1;
+const DB_NAME           = "stock";
 const OBJECT_STORE_NAME = "corpInfo";
+const READ_ONLY         = "readonly";
+const READ_WRITE        = "readwrite";
+const CORP_CODE          = "corpCode";
 
-export const CorpInfoIndexedDBService = {
+export const CorpInfoIDBService = {
+    // IndexedDB 열기
+    openIndexedDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+            request.onerror = (event) => reject(event.target.error);
+
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(OBJECT_STORE_NAME)) {
+                    const objectStore = db.createObjectStore(OBJECT_STORE_NAME, { keyPath: CORP_CODE });
+                    objectStore.createIndex(CORP_CODE, CORP_CODE, { unique: true });
+                }
+            };
+
+            request.onsuccess = (event) => resolve(event.target.result);
+        });
+    },
+
     async getAllCorpInfoList() {
         // 1. IndexedDB 열기 (Promise 로 변환)
         const db = await this.openIndexedDB();
@@ -23,29 +45,10 @@ export const CorpInfoIndexedDBService = {
         return await this.getAllFromIndexedDB(db);
     },
 
-    // IndexedDB 열기
-    openIndexedDB() {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-            request.onerror = (event) => reject(event.target.error);
-
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-                if (!db.objectStoreNames.contains(OBJECT_STORE_NAME)) {
-                    const objectStore = db.createObjectStore(OBJECT_STORE_NAME, { keyPath: "corpCode" });
-                    objectStore.createIndex("corpCode", "corpCode", { unique: true });
-                }
-            };
-
-            request.onsuccess = (event) => resolve(event.target.result);
-        });
-    },
-
     // IndexedDB 에서 데이터 개수 확인
     countRecords(db) {
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction([OBJECT_STORE_NAME], "readonly");
+            const transaction = db.transaction([OBJECT_STORE_NAME], READ_ONLY);
             const objectStore = transaction.objectStore(OBJECT_STORE_NAME);
             const countRequest = objectStore.count();
 
@@ -57,7 +60,7 @@ export const CorpInfoIndexedDBService = {
     // IndexedDB에 데이터 저장
     saveToIndexedDB(db, data) {
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction([OBJECT_STORE_NAME], "readwrite");
+            const transaction = db.transaction([OBJECT_STORE_NAME], READ_WRITE);
             const objectStore = transaction.objectStore(OBJECT_STORE_NAME);
 
             for (const { corpCode, corpName } of data) {
@@ -72,7 +75,7 @@ export const CorpInfoIndexedDBService = {
     // IndexedDB 에서 모든 데이터 가져오기
     getAllFromIndexedDB(db) {
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction([OBJECT_STORE_NAME], "readonly");
+            const transaction = db.transaction([OBJECT_STORE_NAME], READ_ONLY);
             const objectStore = transaction.objectStore(OBJECT_STORE_NAME);
             const getAllRequest = objectStore.getAll();
 
@@ -89,7 +92,7 @@ export const CorpInfoIndexedDBService = {
         // 1. IndexedDB 열기 (Promise 로 변환)
         const db = await this.openIndexedDB();
 
-        const transaction = db.transaction([OBJECT_STORE_NAME], "readonly");
+        const transaction = db.transaction([OBJECT_STORE_NAME], READ_ONLY);
         const objectStore = transaction.objectStore(OBJECT_STORE_NAME);
 
         let corpInfoList = [];
@@ -110,7 +113,7 @@ export const CorpInfoIndexedDBService = {
         // 1. IndexedDB 열기 (Promise 로 변환)
         const db = await this.openIndexedDB();
 
-        const transaction = db.transaction([OBJECT_STORE_NAME], "readonly");
+        const transaction = db.transaction([OBJECT_STORE_NAME], READ_ONLY);
         const objectStore = transaction.objectStore(OBJECT_STORE_NAME);
 
         const getRequest = objectStore.get(corpCode);

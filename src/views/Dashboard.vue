@@ -4,7 +4,8 @@ import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { DateUtil } from "@/utils/DateUtil";
 import { MoneyUtil } from "@/utils/MoneyUtil";
-import { CorpInfoIndexedDBService } from "@/service/indexedDB/CorpInfoIndexedDBService";
+import { CorpInfoIDBService } from "@/service/indexedDB/CorpInfoIDBService";
+import { ClientIdIDBService } from "@/service/indexedDB/ClientIdIDBService";
 
 const largeHoldingsTop5 = ref({
     buy: [],
@@ -23,7 +24,8 @@ onMounted(async () => {
 
     await Promise.all([
         getTop5StockTrade({ tradeDtGoe: initDateRangeObj.startDate, tradeDtLoe: initDateRangeObj.endDate }),
-        CorpInfoIndexedDBService.getAllCorpInfoList()
+        CorpInfoIDBService.getAllCorpInfoList(),
+        ClientIdIDBService.getUUID(),
     ]);
 });
 

@@ -2,7 +2,7 @@
 import { LargeHoldingsDetailsService } from "@/service/LargeHoldingsDetailsService";
 import { computed, onMounted, ref } from "vue";
 import { MoneyUtil } from "@/utils/MoneyUtil";
-import { CorpInfoIndexedDBService } from "@/service/indexedDB/CorpInfoIndexedDBService";
+import { CorpInfoIDBService } from "@/service/indexedDB/CorpInfoIDBService";
 import { useRoute, useRouter } from 'vue-router';
 
 const loading1 = ref(false);
@@ -73,7 +73,7 @@ onMounted(async () => {
 
 async function initDataApiCall() {
     corpInfoList.value = [];
-    for (const { corpCode, corpName } of await CorpInfoIndexedDBService.getAllCorpInfoList()) {
+    for (const { corpCode, corpName } of await CorpInfoIDBService.getAllCorpInfoList()) {
         corpInfoList.value.push({ label: corpName, value: corpCode });
     }
 
@@ -81,7 +81,7 @@ async function initDataApiCall() {
         return;
     }
 
-    const findCorpInfo = await CorpInfoIndexedDBService.getByCorpCode(corpCode.value);
+    const findCorpInfo = await CorpInfoIDBService.getByCorpCode(corpCode.value);
     selectedItem.value = findCorpInfo.corpName;
 
     await Promise.all([
