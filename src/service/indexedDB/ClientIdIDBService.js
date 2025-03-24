@@ -4,6 +4,7 @@ const OBJECT_STORE_NAME = "clientId";
 const READ_ONLY         = "readonly";
 const READ_WRITE        = "readwrite";
 const UUID              = "UUID";
+
 export const ClientIdIDBService = {
     openIndexedDB() {
         return new Promise((resolve, reject) => {
