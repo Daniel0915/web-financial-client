@@ -28,20 +28,13 @@ onMounted(async () => {
     await Promise.all([
         getTop5StockTrade({ tradeDtGoe: initDateRangeObj.startDate, tradeDtLoe: initDateRangeObj.endDate }),
         CorpInfoIDBService.getAllCorpInfoList(),
+        connectUserViewCnt()
     ]);
-
-    connectUserViewCnt();
-
-
-
-
-
 });
 
-function connectUserViewCnt() {
-    ClientIdIDBService.getUUID().then((uuid) => {
-        UserConnectService.getUserViewCnt(uuid, getViewCnt, handleError);
-    }); // UUID 가져오기 (비동기)
+async function connectUserViewCnt() {
+    const uuid = await ClientIdIDBService.getUUID();  // 비동기 호출 완료까지 대기
+    await UserConnectService.getUserViewCnt(uuid, getViewCnt, handleError);  // 비동기 호출 완료까지 대기
 }
 
 function getViewCnt(data) {
