@@ -5,8 +5,6 @@ import { useRouter } from "vue-router";
 import { DateUtil } from "@/utils/DateUtil";
 import { MoneyUtil } from "@/utils/MoneyUtil";
 import { CorpInfoIDBService } from "@/service/indexedDB/CorpInfoIDBService";
-import { ClientIdIDBService } from "@/service/indexedDB/ClientIdIDBService";
-import { UserConnectService } from "@/service/UserConnectService";
 
 const largeHoldingsTop5 = ref({
     buy: [],
@@ -17,8 +15,6 @@ const execOwnershipTop5 = ref({
     buy: [],
     sell: [],
 });
-
-const viewCnt = ref(0);
 
 const router = useRouter();
 
@@ -31,19 +27,6 @@ onMounted(async () => {
         connectUserViewCnt()
     ]);
 });
-
-async function connectUserViewCnt() {
-    const uuid = await ClientIdIDBService.getUUID();  // 비동기 호출 완료까지 대기
-    await UserConnectService.getUserViewCnt(uuid, getViewCnt, handleError);  // 비동기 호출 완료까지 대기
-}
-
-function getViewCnt(data) {
-    viewCnt.value = data;
-}
-
-function handleError(error) {
-    console.error("SSE 연결 중 오류 발생:", error);
-}
 
 
 function getTop5StockTrade(params) {
@@ -70,7 +53,6 @@ function movePage(event, stockType) {
 
 <template>
     <div class="grid grid-cols-12 gap-8">
-        실시간 조회수 {{ viewCnt }}
         <div class="col-span-12 xl:col-span-6">
             <div class="card">
                 <div class="font-semibold text-xl mb-4">대주주 매수 TOP 5 기업별(7일)</div>

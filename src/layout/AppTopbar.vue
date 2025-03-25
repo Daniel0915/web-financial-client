@@ -1,10 +1,42 @@
 <script setup>
 import { useLayout } from '@/layout/composables/layout';
 import AppConfigurator from './AppConfigurator.vue';
-import { ref } from 'vue';
+import { onMounted, ref, computed } from 'vue';
+import { ClientIdIDBService } from "@/service/indexedDB/ClientIdIDBService";
+import { UserConnectService } from "@/service/UserConnectService";
 
 const { toggleMenu, toggleDarkMode, isDarkTheme } = useLayout();
 const env = ref(import.meta.env.VITE_ENV);
+const viewCnt = ref(0);
+
+const avatarImages = Array.from({ length: 16 }, (_, i) => `/demo/images/avatar/${i}.png`);
+
+// 랜덤한 아바타 리스트 생성
+const randomAvatars = computed(() => {
+    let count = viewCnt.value > 5 ? 5 : viewCnt.value; // 최대 5개까지 표시
+    let shuffled = avatarImages.sort(() => Math.random() - 0.5); // 랜덤 셔플
+    return shuffled.slice(0, count);
+});
+
+const extraCount = computed(() => (viewCnt.value > 0 ? `+${viewCnt.value}` : null));
+
+onMounted(async () => {
+    await connectUserViewCnt();
+});
+
+function getViewCnt(data) {
+    viewCnt.value = data;
+}
+
+function handleError(error) {
+    console.error("SSE 연결 중 오류 발생:", error);
+}
+
+async function connectUserViewCnt() {
+    const uuid = await ClientIdIDBService.getUUID();  // 비동기 호출 완료까지 대기
+    await UserConnectService.getUserViewCnt(uuid, getViewCnt, handleError);  // 비동기 호출 완료까지 대기
+}
+
 </script>
 
 <template>
@@ -38,6 +70,28 @@ const env = ref(import.meta.env.VITE_ENV);
 
         <div class="layout-topbar-actions">
             <div class="layout-config-menu">
+                <!-- TODO : 실시간 조회수 작업 [start] -->
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-weight: bold; color: #333;">{{ viewCnt }}명이 보고 있어요!</span>
+                    <AvatarGroup>
+                        <Avatar
+                            v-for="(avatar, index) in randomAvatars"
+                            :key="index"
+                            :image="avatar"
+                            size="large"
+                            shape="circle">
+                        </Avatar>
+                        <Avatar
+                            v-if="extraCount"
+                            :label="extraCount"
+                            shape="circle"
+                            size="large"
+                            :style="{ backgroundColor: '#9c27b0', color: '#ffffff' }">
+                        </Avatar>
+                    </AvatarGroup>
+                </div>
+                <!-- TODO : 실시간 조회수 작업 [end] -->
+
                 <button type="button" class="layout-topbar-action" @click="toggleDarkMode">
                     <i :class="['pi', { 'pi-moon': isDarkTheme, 'pi-sun': !isDarkTheme }]"></i>
                 </button>
